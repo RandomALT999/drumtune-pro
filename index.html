@@ -3,6 +3,30 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<script>
+  // A deliberate swipe used to fix a mis-sized shell on standalone-launch,
+  // but plain timers/resize listeners with no touch involved never did —
+  // so whatever iOS is waiting for before it reports the true viewport
+  // height seems to require a real touch input, not just time passing.
+  // Recomputing on every touch (not just the first) means it corrects as
+  // soon as that happens, ideally on the very first tap to navigate rather
+  // than requiring a deliberate swipe aimed at the gap itself.
+  (function () {
+    function setAppHeight() {
+      var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    setAppHeight();
+    window.addEventListener("resize", setAppHeight);
+    window.addEventListener("orientationchange", setAppHeight);
+    document.addEventListener("touchstart", setAppHeight, { passive: true });
+    document.addEventListener("touchmove", setAppHeight, { passive: true });
+    document.addEventListener("pointerdown", setAppHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", setAppHeight);
+    }
+  })();
+</script>
 <meta name="theme-color" content="#14151a" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

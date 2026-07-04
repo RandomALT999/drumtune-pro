@@ -44,15 +44,15 @@ button { font-family: inherit; }
   max-width: 430px;
   /* A hard height (not min-height) caps the shell at the viewport, so tall
      pages make #view-root scroll internally instead of growing #phone past
-     the screen and pushing the bottom nav out of view. Reverted from the
-     position:fixed/inset:0 + scroll-locked-body approach — that stopped a
-     brief page-load mis-size from ever self-correcting, turning a temporary
-     slide-into-place into a permanent gap. Plain dvh plus a normally
-     scrollable body is worse in one way (a stray swipe can drag the shell,
-     and short pages show a momentary gap on launch) but at least the gap
-     doesn't get stuck. */
+     the screen and pushing the bottom nav out of view. var(--app-height) is
+     set from index.html's inline script the moment the first real touch
+     happens (a deliberate swipe fixed the gap, but pure timers/resize
+     listeners with no touch involved never did — so whatever iOS is waiting
+     for seems to be an actual touch input, not time). Falls back to dvh
+     until that first touch. */
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
   margin: 0 auto;
   background: var(--bg);
   display: flex;
