@@ -157,33 +157,13 @@ export function getKit(kitId) {
   const builtIn = genrePresets.find((k) => k.id === kitId);
   if (builtIn) return builtIn;
   if (sessionKits.has(kitId)) return sessionKits.get(kitId);
-  const userKits = loadSavedKits() || savedKits;
+  const userKits = loadSavedKits() || [];
   return userKits.find((k) => k.id === kitId);
 }
 
 export function kitPieceSummary(kit) {
   return kit.pieces.map((p) => p.label).join(" · ");
 }
-
-// Seed examples shown the first time the Saved Kits screen loads, before the
-// user has saved anything of their own. Reuses real kit shapes (same as
-// genrePresets) so they're fully functional, not just placeholder text.
-export const savedKits = [
-  {
-    id: "seed-main-stage",
-    name: "Main Stage Kit",
-    tag: "Saved Jun 28 · based on Rock Kit",
-    styleId: genrePresets[0].styleId,
-    pieces: genrePresets[0].pieces,
-  },
-  {
-    id: "seed-practice-room",
-    name: "Practice Room Kit",
-    tag: "Saved May 14 · based on Jazz Kit",
-    styleId: genrePresets[1].styleId,
-    pieces: genrePresets[1].pieces,
-  },
-];
 
 // Every lug starts unmeasured — no pre-filled "already in tune" mock state.
 // status: "pending" | "in-tune" | "slight" | "off"
@@ -206,10 +186,3 @@ export function generateCrossOrder(count) {
   if (count % 2 !== 0) order.push(count);
   return order;
 }
-
-export const overtoneRows = [
-  { label: "Fundamental", freq: "118.4 Hz", amp: "100%" },
-  { label: "2nd Harmonic", freq: "236.9 Hz", amp: "42%" },
-  { label: "3rd Harmonic", freq: "355.1 Hz", amp: "18%" },
-  { label: "4th Harmonic", freq: "473.8 Hz", amp: "9%" },
-];

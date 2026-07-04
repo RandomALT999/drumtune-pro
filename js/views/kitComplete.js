@@ -1,6 +1,6 @@
 import { el, qs } from "../util.js";
 import { navigate } from "../main.js";
-import { getKit, savedKits as seedKits } from "../data.js";
+import { getKit } from "../data.js";
 import { addSavedKit } from "../storage.js";
 
 export function renderKitComplete(params) {
@@ -35,7 +35,7 @@ export function renderKitComplete(params) {
   qs(view, "#save-kit-btn").addEventListener("click", () => {
     if (!kit) return;
     const name = qs(view, "#kit-name-input").value.trim() || kit.name;
-    addSavedKit({ id: `saved-${Date.now()}`, name, tag: kit.tag, styleId: kit.styleId, pieces: kit.pieces }, seedKits);
+    addSavedKit({ id: `saved-${Date.now()}`, name, tag: kit.tag, styleId: kit.styleId, pieces: kit.pieces });
     const btn = qs(view, "#save-kit-btn");
     btn.textContent = "Saved ✓";
     btn.disabled = true;

@@ -1,6 +1,6 @@
 import { el, qs, qsa } from "../util.js";
 import { navigate } from "../main.js";
-import { drumTypes, soundPresets, genrePresets, savedKits as seedKits, targetFrequencyFor, getKit, registerSessionKit } from "../data.js";
+import { drumTypes, soundPresets, genrePresets, targetFrequencyFor, getKit, registerSessionKit } from "../data.js";
 import { playToneForDrumType } from "../audio/synth.js";
 import { upsertSavedKit } from "../storage.js";
 import { beginKitTuning } from "./tuningShared.js";
@@ -225,7 +225,7 @@ export function renderKitBuilder(params) {
     saveBtn.addEventListener("click", () => {
       if (pieces.length === 0) return;
       const id = isBuiltIn ? `custom-${Date.now()}` : sourceKit.id;
-      upsertSavedKit(buildKitObject(id), seedKits);
+      upsertSavedKit(buildKitObject(id));
       navigate("kits", {}, { replace: true });
     });
   }

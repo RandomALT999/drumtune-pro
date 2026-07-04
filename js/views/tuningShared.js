@@ -71,6 +71,7 @@ export function tuningTipsHtml() {
       <ul>
         <li>Hold the phone 3–6 inches above the drumhead, close to the lug you're tuning, so that lug's pitch dominates the mic.</li>
         <li>Strike once, about 1 inch in from the rim at that lug, then let it ring — only the initial hit is measured, since the pitch drifts as the note fades.</li>
+        <li>If readings keep flipping between two different values, strike a little closer to the center — near the rim the head rings at two pitches at once, which can confuse the reading.</li>
         <li>Wait for the reading, adjust the tension rod, then strike again.</li>
         <li>Tune somewhere quiet — voices and music can throw off detection.</li>
         <li>To hear one head alone, rest the drum's other head on carpet or your leg to mute it.</li>

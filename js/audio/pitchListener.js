@@ -1,25 +1,31 @@
 import { yinPitch } from "./yin.js";
+import { spectralPitch } from "./spectralPeak.js";
 
 // Onset/hit-detection tuning knobs (hit mode only).
 const ONSET_RMS = 0.02; // loud enough to be a strike, not room noise
 const ONSET_RISE_FACTOR = 2.5; // sharp jump vs. the previous tick's level
 const HIT_REFRACTORY_MS = 350; // min gap before another hit can register
-const HIT_CAPTURE_MS = 280; // how long after onset to measure pitch
-const HIT_MIN_CLARITY = 0.7;
+const HIT_CAPTURE_MS = 350; // measure this long after onset, then analyze
+const HIT_TICK_MS = 50; // faster ticks in hit mode for onset resolution
+// Hit mode analyzes one long window per strike, so the analyser buffer is
+// forced up to this size (~171 ms at 48 kHz) — long enough to resolve a
+// drum's fundamental and its ~1.6x overtone as separate spectral peaks.
+const HIT_FFT_SIZE = 8192;
 
-// Wraps mic capture + a throttled YIN analysis loop. Exposes the underlying
+// Wraps mic capture + a throttled analysis loop. Exposes the underlying
 // AnalyserNode too, so screens that need a live FFT (Advanced) can share the
 // same audio graph instead of opening a second mic stream.
 //
 // Two modes:
-//  - continuous (onUpdate): raw pitch every tick — used by the Advanced
+//  - continuous (onUpdate): YIN pitch every tick — used by the Advanced
 //    screen, which only needs the analyser + occasional readings.
-//  - hit-based (onHit): detects discrete drum strikes via an RMS onset jump
-//    and measures pitch only during the initial attack window. A ringing
-//    head's pitch drifts noticeably as it decays, so continuous readings
-//    swing all over between hits — the initial strike is the reading that
-//    matters for tuning. onHit fires once per strike with the median pitch
-//    of the capture window, or null if the strike was unreadable.
+//  - hit-based (onHit): detects discrete drum strikes via an RMS onset jump,
+//    then measures pitch once per strike with spectral peak detection
+//    (spectralPeak.js) on a long window taken at the end of the capture
+//    period. Spectral peaks handle drums' inharmonic overtones where
+//    autocorrelation methods flip between modes; measuring per-strike avoids
+//    the pitch drift of the decaying ring. onHit fires once per strike, or
+//    with null if the strike had no readable pitch.
 export class PitchListener {
   constructor() {
     this.audioCtx = null;
@@ -30,13 +36,13 @@ export class PitchListener {
     this.buffer = null;
     this.minFreq = 30;
     this.maxFreq = 600;
+    this.targetFreq = null;
     this.onUpdate = null;
     this.onHit = null;
     this._lastRms = 0;
     this._lastOnset = 0;
     this._capturing = false;
     this._hitStart = 0;
-    this._samples = [];
   }
 
   get isRunning() {
@@ -54,13 +60,15 @@ export class PitchListener {
   // opts: { onUpdate(result|null), onHit(result|null), targetFreq, fftSize, updateIntervalMs }
   async start(opts = {}) {
     const { onUpdate, onHit, targetFreq, fftSize = 2048 } = opts;
-    // Hit mode ticks faster so a ~280ms capture window still collects
-    // several readings to take a median over.
-    const updateIntervalMs = opts.updateIntervalMs ?? (onHit ? 60 : 150);
+    const updateIntervalMs = opts.updateIntervalMs ?? (onHit ? HIT_TICK_MS : 150);
     this.onUpdate = onUpdate || null;
     this.onHit = onHit || null;
-    this.minFreq = targetFreq ? Math.max(20, targetFreq * 0.5) : 30;
-    this.maxFreq = targetFreq ? targetFreq * 2.4 : 600;
+    this.targetFreq = targetFreq || null;
+    // Narrower than before (was 0.5x–2.4x): a drum mid-tuning sits near its
+    // target, and the wider window mostly admitted overtones/subharmonics
+    // that caused the flip-flopping readings seen on-device.
+    this.minFreq = targetFreq ? Math.max(20, targetFreq * 0.55) : 30;
+    this.maxFreq = targetFreq ? targetFreq * 1.9 : 600;
 
     // getUserMedia is only exposed in a secure context (HTTPS or localhost).
     // Serving this over plain HTTP to a phone on the same network — the
@@ -79,7 +87,7 @@ export class PitchListener {
     this.audioCtx = new Ctx();
     this.source = this.audioCtx.createMediaStreamSource(this.stream);
     this.analyser = this.audioCtx.createAnalyser();
-    this.analyser.fftSize = fftSize;
+    this.analyser.fftSize = this.onHit ? Math.max(fftSize, HIT_FFT_SIZE) : fftSize;
     this.source.connect(this.analyser);
     this.buffer = new Float32Array(this.analyser.fftSize);
 
@@ -94,14 +102,13 @@ export class PitchListener {
       return;
     }
     if (!this.onUpdate) return;
-    this.onUpdate(this._readPitch());
-  }
-
-  _readPitch() {
-    return yinPitch(this.buffer, this.audioCtx.sampleRate, {
-      minFreq: this.minFreq,
-      maxFreq: this.maxFreq,
-    });
+    this.onUpdate(
+      yinPitch(this.buffer, this.audioCtx.sampleRate, {
+        minFreq: this.minFreq,
+        maxFreq: this.maxFreq,
+        targetFreq: this.targetFreq,
+      })
+    );
   }
 
   _hitTick() {
@@ -111,32 +118,27 @@ export class PitchListener {
     const now = Date.now();
 
     if (this._capturing) {
-      const result = this._readPitch();
-      if (result && result.clarity >= HIT_MIN_CLARITY) this._samples.push(result);
       if (now - this._hitStart >= HIT_CAPTURE_MS) {
         this._capturing = false;
-        if (this._samples.length) {
-          const freqs = this._samples.map((s) => s.frequency).sort((a, b) => a - b);
-          this.onHit({
-            frequency: freqs[Math.floor(freqs.length / 2)],
-            clarity: Math.max(...this._samples.map((s) => s.clarity)),
-          });
-        } else {
-          this.onHit(null); // strike heard, but no readable pitch in it
-        }
-        this._samples = [];
+        // The analyser buffer is a rolling window of the last ~171 ms, so at
+        // this point it holds the strike's early decay — past the noisy
+        // stick attack, before the ring has drifted. One analysis per hit.
+        this.onHit(
+          spectralPitch(this.buffer, this.audioCtx.sampleRate, {
+            minFreq: this.minFreq,
+            maxFreq: this.maxFreq,
+            targetFreq: this.targetFreq,
+          })
+        );
       }
     } else if (
       rms > ONSET_RMS &&
       rms > this._lastRms * ONSET_RISE_FACTOR &&
       now - this._lastOnset > HIT_REFRACTORY_MS
     ) {
-      // The onset tick itself is the stick-attack transient (mostly noise);
-      // open the capture window here but only measure the following ticks.
       this._lastOnset = now;
       this._hitStart = now;
       this._capturing = true;
-      this._samples = [];
     }
     this._lastRms = rms;
   }
@@ -154,7 +156,6 @@ export class PitchListener {
     this.onUpdate = null;
     this.onHit = null;
     this._capturing = false;
-    this._samples = [];
   }
 }
 

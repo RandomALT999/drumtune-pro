@@ -1,10 +1,15 @@
 import { el, qs } from "../util.js";
 import { registerCleanup } from "../main.js";
-import { overtoneRows, generateLugs } from "../data.js";
+import { generateLugs } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
 import { findOvertones } from "../audio/fftPeaks.js";
 
-const HARMONIC_LABELS = ["Fundamental", "2nd Harmonic", "3rd Harmonic", "4th Harmonic", "5th Harmonic"];
+const ROW_LABELS = ["Fundamental", "Overtone 2", "Overtone 3", "Overtone 4", "Overtone 5"];
+
+const EMPTY_OVERTONES_HTML = `
+  <div style="text-align:center; font-size:13px; color:var(--text-dim); padding:8px 0;">
+    Start listening, then strike the drum to see its frequency makeup.
+  </div>`;
 
 function overtoneRowsHtml(rows) {
   return rows
@@ -21,7 +26,7 @@ function overtoneRowsHtml(rows) {
 
 function livePeaksToRows(peaks) {
   return peaks.map((p, i) => ({
-    label: HARMONIC_LABELS[i] || `${i + 1}th Harmonic`,
+    label: ROW_LABELS[i] || `Overtone ${i + 1}`,
     freq: `${p.freq.toFixed(1)} Hz`,
     amp: `${p.ampPct}%`,
   }));
@@ -53,21 +58,9 @@ function sizeCanvas(canvas) {
   return { ctx, w, h };
 }
 
-// Static placeholder curve, shown until the user opts into live listening.
-function drawMockSpectrum(canvas) {
+function drawEmptySpectrum(canvas) {
   const { ctx, w, h } = sizeCanvas(canvas);
   drawGrid(ctx, w, h);
-  const styles = getComputedStyle(document.documentElement);
-  const accent = styles.getPropertyValue("--accent-2").trim() || "#4da3ff";
-  const peaks = [0.15, 0.95, 0.4, 0.62, 0.22, 0.3, 0.18, 0.5, 0.12, 0.2];
-  const barW = w / peaks.length;
-  ctx.fillStyle = accent;
-  peaks.forEach((p, i) => {
-    const barH = p * h * 0.9;
-    ctx.globalAlpha = i === 1 ? 1 : 0.55;
-    ctx.fillRect(i * barW + 3, h - barH, barW - 6, barH);
-  });
-  ctx.globalAlpha = 1;
 }
 
 function drawLiveSpectrum(canvas, analyser) {
@@ -78,7 +71,7 @@ function drawLiveSpectrum(canvas, analyser) {
 
   const data = new Uint8Array(analyser.frequencyBinCount);
   analyser.getByteFrequencyData(data);
-  // Only the low/mid range where drum fundamentals & early harmonics live.
+  // Only the low/mid range where drum fundamentals & early overtones live.
   const bins = Math.min(data.length, 120);
   const barW = w / bins;
   ctx.fillStyle = accent;
@@ -97,16 +90,31 @@ export function renderAdvanced() {
   let overtoneTimer = null;
 
   const view = el(`
-    <div class="section-title">FFT Spectrum <span class="badge-soon" id="fft-badge">Mock data</span></div>
+    <div class="section-title">FFT Spectrum <span class="badge-soon" id="fft-badge">Idle</span></div>
     <div class="analysis-canvas-wrap">
       <canvas id="fft-canvas"></canvas>
     </div>
     <div id="mic-error-slot"></div>
     <button class="btn btn-secondary" id="listen-toggle" style="margin-bottom:8px;">Start Listening</button>
 
-    <div class="section-title">Overtone Series</div>
+    <div class="section-title">
+      Overtone Series
+      <button class="help-btn" id="overtone-help-btn" aria-label="What is the overtone series?">?</button>
+    </div>
+    <div class="help-box" id="overtone-help" hidden>
+      Every drum note is a stack of frequencies, not just one. The
+      <b>fundamental</b> is the lowest and is the pitch you actually tune —
+      it should land near your target Hz. The rows below it are
+      <b>overtones</b>: higher ways the head vibrates at the same time (on
+      drums they aren't neat multiples of the fundamental like on a guitar
+      string). How to use this: strike the drum and compare the fundamental
+      against your target. If an overtone shows much louder than the
+      fundamental, the head is likely uneven — go around the lugs and even
+      them out. Comparing the pattern before and after tuning also shows how
+      "ringy" vs. "focused" the drum has become.
+    </div>
     <div class="card" id="overtone-card">
-      ${overtoneRowsHtml(overtoneRows)}
+      ${EMPTY_OVERTONES_HTML}
     </div>
 
     <div class="section-title">Lug Consistency</div>
@@ -127,7 +135,7 @@ export function renderAdvanced() {
   `);
 
   const canvas = qs(view, "#fft-canvas");
-  drawMockSpectrum(canvas);
+  drawEmptySpectrum(canvas);
 
   function loop() {
     if (!listening) return;
@@ -147,11 +155,11 @@ export function renderAdvanced() {
   async function toggleListen() {
     const btn = qs(view, "#listen-toggle");
     if (listening) {
+      // Freeze in place: the canvas keeps its last frame and the overtone
+      // table keeps its most recent readings for reference.
       stopListening();
       btn.textContent = "Start Listening";
-      qs(view, "#fft-badge").textContent = "Mock data";
-      drawMockSpectrum(canvas);
-      qs(view, "#overtone-card").innerHTML = overtoneRowsHtml(overtoneRows);
+      qs(view, "#fft-badge").textContent = "Paused";
       return;
     }
     qs(view, "#mic-error-slot").innerHTML = "";
@@ -174,6 +182,10 @@ export function renderAdvanced() {
   }
 
   qs(view, "#listen-toggle").addEventListener("click", toggleListen);
+  qs(view, "#overtone-help-btn").addEventListener("click", () => {
+    const box = qs(view, "#overtone-help");
+    box.hidden = !box.hidden;
+  });
 
   return view;
 }

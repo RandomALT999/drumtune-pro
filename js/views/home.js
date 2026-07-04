@@ -1,10 +1,9 @@
 import { el, qsa } from "../util.js";
 import { navigate } from "../main.js";
-import { savedKits as seedKits } from "../data.js";
 import { loadSavedKits } from "../storage.js";
 
 export function renderHome() {
-  const kitCount = (loadSavedKits() ?? seedKits).length;
+  const kitCount = (loadSavedKits() || []).length;
 
   const view = el(`
     <div class="section-title">Quick Tune</div>

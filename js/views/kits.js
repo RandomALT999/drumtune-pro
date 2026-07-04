@@ -1,11 +1,10 @@
 import { el, qs, qsa } from "../util.js";
 import { navigate } from "../main.js";
-import { savedKits as seedKits, kitPieceSummary } from "../data.js";
+import { kitPieceSummary } from "../data.js";
 import { loadSavedKits, saveSavedKits } from "../storage.js";
 
 function currentList() {
-  const stored = loadSavedKits();
-  return stored === null ? seedKits : stored;
+  return loadSavedKits() || [];
 }
 
 function listHtml(list) {
