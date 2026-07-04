@@ -4,10 +4,13 @@
 <meta charset="UTF-8" />
 <script>
   // iOS reports a slightly-off viewport height on the first frame after a
-  // standalone home-screen launch (the "black chin" that only corrects once
-  // something triggers a resize, like scrolling) — computing it ourselves
-  // from visualViewport and re-applying on every resize fixes that instead
-  // of relying on dvh alone to settle on its own.
+  // standalone home-screen launch, and only settles to the true value a
+  // moment later — previously a scroll gesture happened to trigger that
+  // correction, but now that the page is locked from scrolling there's
+  // nothing left to trigger it, so the gap becomes permanent instead of
+  // temporary. Re-checking a few times right after load (not just on
+  // resize/orientation events, which may never fire on their own here)
+  // catches the true value once iOS has it ready.
   (function () {
     function setAppHeight() {
       var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
@@ -16,9 +19,15 @@
     setAppHeight();
     window.addEventListener("resize", setAppHeight);
     window.addEventListener("orientationchange", setAppHeight);
+    window.addEventListener("pageshow", setAppHeight);
+    document.addEventListener("visibilitychange", setAppHeight);
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", setAppHeight);
+      window.visualViewport.addEventListener("scroll", setAppHeight);
     }
+    [0, 50, 150, 300, 600, 1200].forEach(function (delay) {
+      setTimeout(setAppHeight, delay);
+    });
   })();
 </script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
