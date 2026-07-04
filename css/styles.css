@@ -42,16 +42,15 @@ html, body {
 button { font-family: inherit; }
 
 #phone {
-  position: relative;
+  /* Pinned to the actual viewport edges instead of computed from a height
+     value (100vh/100dvh/visualViewport all proved unreliable specifically in
+     standalone iOS home-screen mode — a real gap, not a settling-timing
+     issue, since it persisted through retries and event-timing fixes). This
+     sidesteps that whole class of bug: no height number is ever calculated,
+     the browser just anchors all four edges to wherever the real viewport is. */
+  position: fixed;
+  inset: 0;
   max-width: 430px;
-  /* A hard height (not min-height) caps the shell at the viewport, so tall
-     pages make #view-root scroll internally instead of growing #phone past
-     the screen and pushing the bottom nav out of view. var(--app-height) is
-     set from window.visualViewport in index.html and is more reliable than
-     dvh alone for the first frame after a standalone-PWA cold launch. */
-  height: 100vh;
-  height: 100dvh;
-  height: var(--app-height, 100dvh);
   margin: 0 auto;
   background: var(--bg);
   display: flex;
@@ -62,6 +61,8 @@ button { font-family: inherit; }
 @media (min-width: 480px) {
   body { padding: 24px 0; }
   #phone {
+    position: relative;
+    inset: auto;
     min-height: 860px;
     height: 860px;
     border-radius: 36px;
