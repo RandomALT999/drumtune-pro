@@ -1,7 +1,8 @@
 import { el, qs } from "../util.js";
 import { navigate } from "../main.js";
 import { generateLugs } from "../data.js";
-import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning } from "./tuningShared.js";
+import { playToneForDrumType } from "../audio/synth.js";
+import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning, tuningTipsHtml } from "./tuningShared.js";
 
 export function renderSnareTuning(params) {
   const lugs = generateLugs(params.lugCount || 8);
@@ -10,7 +11,8 @@ export function renderSnareTuning(params) {
   const view = el(`
     ${kitBannerHtml(params)}
     <div id="tuning-body"></div>
-    <div class="btn-row" style="margin-bottom:16px;">
+    ${tuningTipsHtml()}
+    <div class="btn-row" style="margin:10px 0 16px;">
       <button class="btn btn-primary" id="guided-btn">Guided Mode</button>
     </div>
 
@@ -48,7 +50,7 @@ export function renderSnareTuning(params) {
     </div>
 
     <div class="btn-row" style="margin-top:4px;">
-      <button class="btn btn-ghost" id="preview-btn">Sound Preview</button>
+      <button class="btn btn-ghost" id="hear-target-btn">▶ Hear Target</button>
       <button class="btn btn-ghost" id="camera-btn">Camera Mode</button>
     </div>
     ${kitNavButtonHtml(params)}
@@ -57,7 +59,9 @@ export function renderSnareTuning(params) {
   mountLiveTuning(qs(view, "#tuning-body"), { lugs, target, fftSize: 2048, styleName: params.styleName });
 
   qs(view, "#guided-btn").addEventListener("click", () => navigate("guided-tuning", params));
-  qs(view, "#preview-btn").addEventListener("click", () => navigate("sound-preview", params));
+  // Plays the target tone in place instead of navigating to Sound Preview —
+  // leaving the screen would throw away the lug-by-lug tuning progress.
+  qs(view, "#hear-target-btn").addEventListener("click", () => playToneForDrumType("snare", target));
   qs(view, "#camera-btn").addEventListener("click", () => navigate("camera", params));
   wireKitNav(view, params);
 

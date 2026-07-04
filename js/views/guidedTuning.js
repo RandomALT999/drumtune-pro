@@ -15,7 +15,7 @@ export function renderGuidedTuning(params) {
   let voiceOn = true;
   let listening = false;
   let micError = null;
-  let inTuneSince = null;
+  let hitFailed = false;
 
   const view = el(`
     <div class="guided-order-track" id="order-track"></div>
@@ -61,11 +61,16 @@ export function renderGuidedTuning(params) {
   }
 
   function promptTextFor(lug) {
-    if (lug.cents == null) return `Lug ${lug.id} — tap Listen to measure it.`;
+    if (hitFailed) return `Couldn't read that — strike lug ${lug.id} once, cleanly.`;
+    if (lug.cents == null) {
+      return listening
+        ? `Strike lug ${lug.id} near the rim.`
+        : `Lug ${lug.id} — tap Listen, then strike it near the rim.`;
+    }
     const turn = turnEstimate(lug.cents);
     if (turn.turns === 0) return `Lug ${lug.id} is in tune.`;
     const dir = turn.direction === "tighten" ? "Tighten" : "Loosen";
-    return `Lug ${lug.id} is ${Math.round(Math.abs(lug.cents))} cents ${lug.cents > 0 ? "low" : "high"}. ${dir} about ${turn.label}.`;
+    return `Lug ${lug.id} is ${Math.round(Math.abs(lug.cents))} cents ${lug.cents > 0 ? "low" : "high"}. ${dir} about ${turn.label}, then strike again.`;
   }
 
   function renderTrack() {
@@ -97,8 +102,12 @@ export function renderGuidedTuning(params) {
   }
 
   function goToStep(newIndex, { announce = true } = {}) {
-    stopListening();
+    hitFailed = false;
     stepIndex = Math.max(0, Math.min(order.length, newIndex));
+    // The mic keeps running across steps (same target for every lug), so
+    // in-tune lugs flow straight into the next step without re-tapping
+    // Listen; it only stops once the whole pattern is complete.
+    if (stepIndex >= order.length) stopListening();
     renderPrompt();
     if (announce) {
       if (stepIndex < order.length) speak(promptTextFor(currentLug()));
@@ -106,26 +115,28 @@ export function renderGuidedTuning(params) {
     }
   }
 
-  function handleUpdate(result) {
-    if (!result || result.clarity < 0.75) {
-      inTuneSince = null;
+  // One measurement per detected strike (initial-attack pitch only). A lug
+  // that lands in tolerance is done for good — the step advances and it
+  // never gets re-measured, so ring-out or noise can't undo it.
+  function handleHit(result) {
+    if (stepIndex >= order.length) return;
+    if (!result) {
+      hitFailed = true;
+      renderPrompt();
       return;
     }
+    hitFailed = false;
     const lug = currentLug();
     const cents = centsOff(result.frequency, target);
     lug.cents = cents;
     lug.status = classifyStatus(cents);
-    renderPrompt();
 
     if (lug.status === "in-tune") {
-      if (inTuneSince == null) {
-        inTuneSince = Date.now();
-      } else if (Date.now() - inTuneSince > 700) {
-        inTuneSince = null;
-        goToStep(stepIndex + 1);
-      }
+      lug.locked = true;
+      goToStep(stepIndex + 1);
     } else {
-      inTuneSince = null;
+      renderPrompt();
+      speak(promptTextFor(lug));
     }
   }
 
@@ -138,7 +149,7 @@ export function renderGuidedTuning(params) {
     }
     micError = null;
     try {
-      await listener.start({ targetFreq: target, fftSize: 2048, onUpdate: handleUpdate });
+      await listener.start({ targetFreq: target, fftSize: 2048, onHit: handleHit });
       listening = true;
       registerCleanup(stopListening);
     } catch (err) {
@@ -150,7 +161,7 @@ export function renderGuidedTuning(params) {
   function stopListening() {
     if (listening) listener.stop();
     listening = false;
-    inTuneSince = null;
+    hitFailed = false;
   }
 
   qs(view, "#listen-btn").addEventListener("click", toggleListen);

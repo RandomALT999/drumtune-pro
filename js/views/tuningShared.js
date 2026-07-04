@@ -2,7 +2,7 @@ import { qs } from "../util.js";
 import { navigate, registerCleanup } from "../main.js";
 import { getKit } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, classifyStatus, turnEstimate } from "../audio/tuningMath.js";
+import { centsOff, classifyStatus, turnEstimate, IN_TUNE_CENTS } from "../audio/tuningMath.js";
 
 export function buildLugMapSvg(lugs, activeLugId) {
   const cx = 130,
@@ -18,9 +18,9 @@ export function buildLugMapSvg(lugs, activeLugId) {
       const arrow =
         lug.cents == null
           ? ""
-          : lug.cents > 5
+          : lug.cents > IN_TUNE_CENTS
           ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↓</text>`
-          : lug.cents < -5
+          : lug.cents < -IN_TUNE_CENTS
           ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↑</text>`
           : "";
       return `
@@ -52,14 +52,30 @@ export function accuracyRingSvg(pct) {
 }
 
 export function pickActiveLug(lugs) {
-  return lugs.find((l) => l.status !== "in-tune") || lugs[0];
+  return lugs.find((l) => !l.locked) || lugs[0];
 }
 
 export function centsBadge(cents) {
-  if (cents == null) return { cls: "good", text: "Tap this lug to begin" };
-  if (cents > 5) return { cls: "loose", text: `${Math.round(cents)} cents low — tighten` };
-  if (cents < -5) return { cls: "tight", text: `${Math.round(Math.abs(cents))} cents high — loosen` };
-  return { cls: "good", text: "In tune" };
+  if (cents == null) return { cls: "good", text: "Strike the lug to begin" };
+  if (cents > IN_TUNE_CENTS) return { cls: "loose", text: `${Math.round(cents)} cents low — tighten` };
+  if (cents < -IN_TUNE_CENTS) return { cls: "tight", text: `${Math.round(Math.abs(cents))} cents high — loosen` };
+  return { cls: "good", text: "In tune ✓" };
+}
+
+// Collapsible mic-placement guidance shown on the tuning screens — readings
+// are only as consistent as where the phone sits relative to the lug.
+export function tuningTipsHtml() {
+  return `
+    <details class="tips-card">
+      <summary>📱 How to get consistent readings</summary>
+      <ul>
+        <li>Hold the phone 3–6 inches above the drumhead, close to the lug you're tuning, so that lug's pitch dominates the mic.</li>
+        <li>Strike once, about 1 inch in from the rim at that lug, then let it ring — only the initial hit is measured, since the pitch drifts as the note fades.</li>
+        <li>Wait for the reading, adjust the tension rod, then strike again.</li>
+        <li>Tune somewhere quiet — voices and music can throw off detection.</li>
+        <li>To hear one head alone, rest the drum's other head on carpet or your leg to mute it.</li>
+      </ul>
+    </details>`;
 }
 
 export function currentFreqFor(target, cents) {
@@ -135,26 +151,38 @@ export function wireKitNav(view, params) {
   });
 }
 
-// Mic-driven tuning: mounts the accuracy ring, lug map, live pitch readout and
-// a Tap Lug / Stop Listening button into `container`, and re-renders that
-// subtree on every pitch update. Marking a lug "in tune" and auto-advancing
-// to the next one both happen here so Tuning and Snare Tuning behave
-// identically. Returns { stop } for callers that want to stop it early.
+// Mic-driven tuning: mounts the accuracy ring, lug map, per-hit readout and
+// a Start/Stop Listening button into `container`. Each detected drum strike
+// gives one measurement (initial-attack pitch only — the ring-out drifts).
+// A lug that lands within tolerance locks in as tuned permanently and the
+// active lug advances to the next unlocked one until every lug is locked,
+// so later noise or decaying ring can't knock a finished lug back out.
+// Shared by Tuning and Snare Tuning so both behave identically.
+// Returns { stop } for callers that want to stop it early.
 export function mountLiveTuning(container, { lugs, target, fftSize, styleName }) {
   const listener = new PitchListener();
   let activeLug = pickActiveLug(lugs);
   let listening = false;
-  let reading = null; // { freq, cents }
+  let lastHit = null; // { freq, cents } from the most recent strike
+  let hitFailed = false; // strike detected but pitch unreadable
   let micError = null;
-  let inTuneSince = null;
+  let allDone = lugs.every((l) => l.locked);
+
+  function statusLine() {
+    if (allDone) return { cls: "good", text: "All lugs in tune ✓" };
+    if (lastHit) return centsBadge(lastHit.cents);
+    if (hitFailed) return { cls: "loose", text: "Couldn't read that — strike once, cleanly" };
+    if (listening) return { cls: "good", text: `Strike lug ${activeLug.id} near the rim` };
+    if (activeLug.cents != null) return centsBadge(activeLug.cents);
+    return { cls: "good", text: "Start listening, then strike the lug" };
+  }
 
   function render() {
-    const inTuneCount = lugs.filter((l) => l.status === "in-tune").length;
+    const inTuneCount = lugs.filter((l) => l.locked).length;
     const accuracy = Math.round((inTuneCount / lugs.length) * 100);
-    const cents = reading ? reading.cents : activeLug.cents;
-    const badge = centsBadge(cents);
-    const currentFreq = reading ? reading.freq : currentFreqFor(target, activeLug.cents);
-    const turn = cents == null ? null : turnEstimate(cents);
+    const badge = statusLine();
+    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, activeLug.cents);
+    const turn = lastHit ? turnEstimate(lastHit.cents) : null;
 
     container.innerHTML = `
       <div class="accuracy-ring-wrap card">
@@ -166,9 +194,9 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
       </div>
 
       <div class="lug-map-wrap">
-        ${buildLugMapSvg(lugs, activeLug.id)}
+        ${buildLugMapSvg(lugs, allDone ? -1 : activeLug.id)}
         <div class="pitch-readout">
-          <div class="current-freq">${currentFreq.toFixed(1)} Hz</div>
+          <div class="current-freq">${displayFreq.toFixed(1)} Hz</div>
           <div class="target-freq">Target: ${target.toFixed(1)} Hz · Lug ${activeLug.id}${styleName ? ` · ${styleName}` : ""}</div>
           <div class="cents-badge ${badge.cls}">${badge.text}</div>
           ${turn && turn.turns > 0 ? `<div class="turn-estimate">≈ ${turn.label} — ${turn.direction}</div>` : ""}
@@ -183,41 +211,40 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
       ${micError ? `<div class="mic-error">${micError}</div>` : ""}
 
       <div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn ${listening ? "btn-primary listening-pulse" : "btn-secondary"}" id="tap-lug-btn">
-          ${listening ? "Stop Listening" : `Tap Lug ${activeLug.id}`}
+        <button class="btn ${listening ? "btn-primary listening-pulse" : "btn-secondary"}" id="tap-lug-btn" ${allDone ? "disabled" : ""}>
+          ${allDone ? "Done ✓" : listening ? "Stop Listening" : "Start Listening"}
         </button>
       </div>
     `;
     qs(container, "#tap-lug-btn").addEventListener("click", toggle);
   }
 
-  function handleUpdate(result) {
-    if (!result || result.clarity < 0.75) {
-      reading = null;
-      inTuneSince = null;
+  function handleHit(result) {
+    if (allDone) return;
+    if (!result) {
+      hitFailed = true;
+      lastHit = null;
       render();
       return;
     }
+    hitFailed = false;
     const cents = centsOff(result.frequency, target);
-    reading = { freq: result.frequency, cents };
+    lastHit = { freq: result.frequency, cents };
     activeLug.cents = cents;
     activeLug.status = classifyStatus(cents);
 
     if (activeLug.status === "in-tune") {
-      if (inTuneSince == null) {
-        inTuneSince = Date.now();
-      } else if (Date.now() - inTuneSince > 700) {
-        inTuneSince = null;
-        const next = lugs.find((l) => l.status !== "in-tune");
-        if (next) {
-          activeLug = next;
-          reading = null;
-        } else {
-          stopListening();
-        }
+      // Lock it in — once a lug hits the target range it stays counted as
+      // tuned; only unlocked lugs get measured from here on.
+      activeLug.locked = true;
+      const next = lugs.find((l) => !l.locked);
+      if (next) {
+        activeLug = next;
+        lastHit = null;
+      } else {
+        allDone = true;
+        stopListening();
       }
-    } else {
-      inTuneSince = null;
     }
     render();
   }
@@ -230,7 +257,7 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
     }
     micError = null;
     try {
-      await listener.start({ targetFreq: target, fftSize, onUpdate: handleUpdate });
+      await listener.start({ targetFreq: target, fftSize, onHit: handleHit });
       listening = true;
       registerCleanup(stopListening);
     } catch (err) {
@@ -242,8 +269,8 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
   function stopListening() {
     if (listening) listener.stop();
     listening = false;
-    reading = null;
-    inTuneSince = null;
+    lastHit = null;
+    hitFailed = false;
   }
 
   render();

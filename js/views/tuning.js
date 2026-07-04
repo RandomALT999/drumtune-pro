@@ -1,21 +1,24 @@
 import { el, qs } from "../util.js";
 import { navigate } from "../main.js";
 import { generateLugs } from "../data.js";
-import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning } from "./tuningShared.js";
+import { playToneForDrumType } from "../audio/synth.js";
+import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning, tuningTipsHtml } from "./tuningShared.js";
 
 export function renderTuning(params) {
   const lugs = generateLugs(params.lugCount || 6);
   const target = params.target || 122;
-  const fftSize = params.drumType === "floor-tom" || params.drumType === "bass-drum" ? 4096 : 2048;
+  const drumType = params.drumType || "rack-tom";
+  const fftSize = drumType === "floor-tom" || drumType === "bass-drum" ? 4096 : 2048;
 
   const view = el(`
     ${kitBannerHtml(params)}
     <div id="tuning-body"></div>
-    <div class="btn-row" style="margin-bottom:10px;">
+    ${tuningTipsHtml()}
+    <div class="btn-row" style="margin:10px 0;">
       <button class="btn btn-primary" id="guided-btn">Guided Mode</button>
     </div>
     <div class="btn-row">
-      <button class="btn btn-ghost" id="preview-btn">Sound Preview</button>
+      <button class="btn btn-ghost" id="hear-target-btn">▶ Hear Target</button>
       <button class="btn btn-ghost" id="camera-btn">Camera Mode</button>
     </div>
     ${kitNavButtonHtml(params)}
@@ -24,7 +27,9 @@ export function renderTuning(params) {
   mountLiveTuning(qs(view, "#tuning-body"), { lugs, target, fftSize, styleName: params.styleName });
 
   qs(view, "#guided-btn").addEventListener("click", () => navigate("guided-tuning", params));
-  qs(view, "#preview-btn").addEventListener("click", () => navigate("sound-preview", params));
+  // Plays the target tone in place instead of navigating to Sound Preview —
+  // leaving the screen would throw away the lug-by-lug tuning progress.
+  qs(view, "#hear-target-btn").addEventListener("click", () => playToneForDrumType(drumType, target));
   qs(view, "#camera-btn").addEventListener("click", () => navigate("camera", params));
   wireKitNav(view, params);
 
