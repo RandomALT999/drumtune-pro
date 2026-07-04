@@ -2,6 +2,25 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<script>
+  // iOS reports a slightly-off viewport height on the first frame after a
+  // standalone home-screen launch (the "black chin" that only corrects once
+  // something triggers a resize, like scrolling) — computing it ourselves
+  // from visualViewport and re-applying on every resize fixes that instead
+  // of relying on dvh alone to settle on its own.
+  (function () {
+    function setAppHeight() {
+      var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+      document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    setAppHeight();
+    window.addEventListener("resize", setAppHeight);
+    window.addEventListener("orientationchange", setAppHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", setAppHeight);
+    }
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <meta name="theme-color" content="#14151a" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
