@@ -2,15 +2,20 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <script>
-  // iOS reports a slightly-off viewport height on the first frame after a
-  // standalone home-screen launch, and only settles to the true value a
-  // moment later — previously a scroll gesture happened to trigger that
-  // correction, but now that the page is locked from scrolling there's
-  // nothing left to trigger it, so the gap becomes permanent instead of
-  // temporary. Re-checking a few times right after load (not just on
-  // resize/orientation events, which may never fire on their own here)
-  // catches the true value once iOS has it ready.
+  // Must run after the viewport-fit=cover meta tag above (order matters —
+  // a script placed before it executes before the browser has applied that
+  // mode, so innerHeight/visualViewport would report the pre-cover viewport
+  // every time, and no amount of re-checking fixes a consistently wrong read).
+  //
+  // Separately: iOS can still report a slightly-off height on the very first
+  // frame after a standalone launch and only settle a moment later —
+  // previously a scroll gesture happened to trigger that correction, but the
+  // page is now locked from scrolling, so nothing is left to trigger it.
+  // Re-checking a few times right after load (not just on resize/orientation
+  // events, which may never fire on their own here) catches the true value
+  // once iOS has it ready.
   (function () {
     function setAppHeight() {
       var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
@@ -30,7 +35,6 @@
     });
   })();
 </script>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <meta name="theme-color" content="#14151a" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
