@@ -2,6 +2,8 @@
 
 A mobile app that helps drummers tune toms and snares by listening to individual lug pitches and guiding tightening/loosening adjustments visually.
 
+**Hosted:** [github.com/RandomALT999/drumtune-pro](https://github.com/RandomALT999/drumtune-pro) — live at [randomalt999.github.io/drumtune-pro](https://randomalt999.github.io/drumtune-pro/) via GitHub Pages (auto-deploys from the `master` branch root on every push). This is the app link to use for the competition submission and for real-device (HTTPS) testing.
+
 ## Status / Decision (locked in)
 
 **Single track: Web/PWA build.** This is both the personal-use app and the Maine App Challenge competition submission (web-based platform project format). The Flutter/native track is dropped.
