@@ -4,17 +4,24 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <script>
-  // A deliberate swipe used to fix a mis-sized shell on standalone-launch,
-  // but plain timers/resize listeners with no touch involved never did —
-  // so whatever iOS is waiting for before it reports the true viewport
-  // height seems to require a real touch input, not just time passing.
-  // Recomputing on every touch (not just the first) means it corrects as
-  // soon as that happens, ideally on the very first tap to navigate rather
-  // than requiring a deliberate swipe aimed at the gap itself.
+  // A deliberate swipe fixed a mis-sized shell on standalone-launch, but
+  // touch/pointer events alone (with no actual scroll motion) didn't — so
+  // it's specifically a real scroll iOS is waiting for, not touch or time.
+  // Forcing a tiny, invisible scroll-and-back ourselves reproduces that
+  // trigger without requiring the user to do it: a well-known workaround
+  // for this general family of "mobile viewport doesn't settle without a
+  // scroll" bugs.
   (function () {
     function setAppHeight() {
       var h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
       document.documentElement.style.setProperty("--app-height", h + "px");
+    }
+    function nudgeScroll() {
+      window.scrollTo(0, 1);
+      requestAnimationFrame(function () {
+        window.scrollTo(0, 0);
+        setAppHeight();
+      });
     }
     setAppHeight();
     window.addEventListener("resize", setAppHeight);
@@ -25,6 +32,11 @@
     if (window.visualViewport) {
       window.visualViewport.addEventListener("resize", setAppHeight);
     }
+    nudgeScroll();
+    window.addEventListener("load", nudgeScroll);
+    [50, 150, 300, 600].forEach(function (delay) {
+      setTimeout(nudgeScroll, delay);
+    });
   })();
 </script>
 <meta name="theme-color" content="#14151a" />
