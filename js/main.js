@@ -12,6 +12,9 @@ import { renderKits } from "./views/kits.js";
 import { renderAdvanced } from "./views/advanced.js";
 import { renderCamera } from "./views/camera.js";
 import { renderAbout } from "./views/about.js";
+import { installAudioUnlock } from "./audio/unlockAudio.js";
+
+installAudioUnlock();
 
 const TOP_LEVEL_ROUTES = new Set(["home", "presets", "kits", "advanced"]);
 
