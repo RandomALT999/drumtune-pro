@@ -1,8 +1,8 @@
 import { qs } from "../util.js";
 import { navigate, registerCleanup } from "../main.js";
-import { getKit } from "../data.js";
+import { getKit, generateCrossOrder } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, classifyStatus, turnEstimate, IN_TUNE_CENTS } from "../audio/tuningMath.js";
+import { centsOff, hzOff, classifyStatus, turnEstimate, IN_TUNE_HZ } from "../audio/tuningMath.js";
 
 export function buildLugMapSvg(lugs, activeLugId) {
   const cx = 130,
@@ -15,12 +15,13 @@ export function buildLugMapSvg(lugs, activeLugId) {
       const x = cx + shellR * Math.cos(angle);
       const y = cy + shellR * Math.sin(angle);
       const isActive = lug.id === activeLugId;
+      // lug.hz is target - freq: positive = low (tighten, ↓ tension arrow).
       const arrow =
-        lug.cents == null
+        lug.hz == null
           ? ""
-          : lug.cents > IN_TUNE_CENTS
+          : lug.hz > IN_TUNE_HZ
           ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↓</text>`
-          : lug.cents < -IN_TUNE_CENTS
+          : lug.hz < -IN_TUNE_HZ
           ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↑</text>`
           : "";
       return `
@@ -51,14 +52,17 @@ export function accuracyRingSvg(pct) {
     </svg>`;
 }
 
-export function pickActiveLug(lugs) {
-  return lugs.find((l) => !l.locked) || lugs[0];
+// Lugs listed in the cross ("star") tightening order — opposite lugs
+// alternate so tension pulls evenly across the head instead of walking
+// around the rim. Same order Guided Mode uses.
+export function starOrder(lugs) {
+  return generateCrossOrder(lugs.length).map((id) => lugs.find((l) => l.id === id));
 }
 
-export function centsBadge(cents) {
-  if (cents == null) return { cls: "good", text: "Strike the lug to begin" };
-  if (cents > IN_TUNE_CENTS) return { cls: "loose", text: `${Math.round(cents)} cents low — tighten` };
-  if (cents < -IN_TUNE_CENTS) return { cls: "tight", text: `${Math.round(Math.abs(cents))} cents high — loosen` };
+export function tuneBadge(hz) {
+  if (hz == null) return { cls: "good", text: "Strike the lug to begin" };
+  if (hz > IN_TUNE_HZ) return { cls: "loose", text: `${hz.toFixed(1)} Hz low — tighten` };
+  if (hz < -IN_TUNE_HZ) return { cls: "tight", text: `${Math.abs(hz).toFixed(1)} Hz high — loosen` };
   return { cls: "good", text: "In tune ✓" };
 }
 
@@ -79,10 +83,10 @@ export function tuningTipsHtml() {
     </details>`;
 }
 
-export function currentFreqFor(target, cents) {
+export function currentFreqFor(target, hz) {
   const base = target || 122;
-  if (cents == null) return base;
-  return base * Math.pow(2, -cents / 1200);
+  if (hz == null) return base;
+  return base - hz; // hz = target - freq
 }
 
 // Kit-flow helpers: when tuning is reached as part of a genre-kit sequence
@@ -162,19 +166,23 @@ export function wireKitNav(view, params) {
 // Returns { stop } for callers that want to stop it early.
 export function mountLiveTuning(container, { lugs, target, fftSize, styleName }) {
   const listener = new PitchListener();
-  let activeLug = pickActiveLug(lugs);
+  // Advance through lugs in the cross/star order, not numeric order, so the
+  // head is pulled evenly. nextActive() = first unlocked lug in that order.
+  const order = starOrder(lugs);
+  const nextActive = () => order.find((l) => !l.locked) || order[order.length - 1];
+  let activeLug = nextActive();
   let listening = false;
-  let lastHit = null; // { freq, cents } from the most recent strike
+  let lastHit = null; // { freq, hz } from the most recent strike
   let hitFailed = false; // strike detected but pitch unreadable
   let micError = null;
   let allDone = lugs.every((l) => l.locked);
 
   function statusLine() {
     if (allDone) return { cls: "good", text: "All lugs in tune ✓" };
-    if (lastHit) return centsBadge(lastHit.cents);
+    if (lastHit) return tuneBadge(lastHit.hz);
     if (hitFailed) return { cls: "loose", text: "Couldn't read that — strike once, cleanly" };
     if (listening) return { cls: "good", text: `Strike lug ${activeLug.id} near the rim` };
-    if (activeLug.cents != null) return centsBadge(activeLug.cents);
+    if (activeLug.hz != null) return tuneBadge(activeLug.hz);
     return { cls: "good", text: "Start listening, then strike the lug" };
   }
 
@@ -182,8 +190,8 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
     const inTuneCount = lugs.filter((l) => l.locked).length;
     const accuracy = Math.round((inTuneCount / lugs.length) * 100);
     const badge = statusLine();
-    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, activeLug.cents);
-    const turn = lastHit ? turnEstimate(lastHit.cents) : null;
+    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, activeLug.hz);
+    const turn = lastHit ? turnEstimate(centsOff(lastHit.freq, target)) : null;
 
     container.innerHTML = `
       <div class="accuracy-ring-wrap card">
@@ -229,16 +237,16 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
       return;
     }
     hitFailed = false;
-    const cents = centsOff(result.frequency, target);
-    lastHit = { freq: result.frequency, cents };
-    activeLug.cents = cents;
-    activeLug.status = classifyStatus(cents);
+    const hz = hzOff(result.frequency, target);
+    lastHit = { freq: result.frequency, hz };
+    activeLug.hz = hz;
+    activeLug.status = classifyStatus(result.frequency, target);
 
     if (activeLug.status === "in-tune") {
       // Lock it in — once a lug hits the target range it stays counted as
       // tuned; only unlocked lugs get measured from here on.
       activeLug.locked = true;
-      const next = lugs.find((l) => !l.locked);
+      const next = order.find((l) => !l.locked);
       if (next) {
         activeLug = next;
         lastHit = null;

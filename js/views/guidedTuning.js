@@ -2,7 +2,7 @@ import { el, qs } from "../util.js";
 import { registerCleanup } from "../main.js";
 import { generateCrossOrder, generateLugs } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, classifyStatus, turnEstimate } from "../audio/tuningMath.js";
+import { centsOff, hzOff, classifyStatus, turnEstimate } from "../audio/tuningMath.js";
 
 export function renderGuidedTuning(params) {
   const lugCount = params.lugCount || 8;
@@ -62,15 +62,15 @@ export function renderGuidedTuning(params) {
 
   function promptTextFor(lug) {
     if (hitFailed) return `Couldn't read that — strike lug ${lug.id} once, cleanly.`;
-    if (lug.cents == null) {
+    if (lug.hz == null) {
       return listening
         ? `Strike lug ${lug.id} near the rim.`
         : `Lug ${lug.id} — tap Listen, then strike it near the rim.`;
     }
-    const turn = turnEstimate(lug.cents);
+    const turn = turnEstimate(centsOff(lug.freq, target));
     if (turn.turns === 0) return `Lug ${lug.id} is in tune.`;
     const dir = turn.direction === "tighten" ? "Tighten" : "Loosen";
-    return `Lug ${lug.id} is ${Math.round(Math.abs(lug.cents))} cents ${lug.cents > 0 ? "low" : "high"}. ${dir} about ${turn.label}, then strike again.`;
+    return `Lug ${lug.id} is ${Math.abs(lug.hz).toFixed(1)} Hz ${lug.hz > 0 ? "low" : "high"}. ${dir} about ${turn.label}, then strike again.`;
   }
 
   function renderTrack() {
@@ -89,7 +89,7 @@ export function renderGuidedTuning(params) {
     const lug = done ? null : currentLug();
     qs(view, ".lug-index").textContent = done ? "Complete" : `Step ${stepIndex + 1} of ${order.length}`;
     qs(view, ".prompt-text").textContent = done ? "All lugs complete — nice work!" : promptTextFor(lug);
-    const turn = !done && lug.cents != null ? turnEstimate(lug.cents) : null;
+    const turn = !done && lug.freq != null ? turnEstimate(centsOff(lug.freq, target)) : null;
     qs(view, ".turn-estimate").textContent = turn && turn.turns > 0 ? `≈ ${turn.label} — ${turn.direction}` : "";
     qs(view, "#mic-error-slot").innerHTML = micError ? `<div class="mic-error">${micError}</div>` : "";
 
@@ -127,9 +127,9 @@ export function renderGuidedTuning(params) {
     }
     hitFailed = false;
     const lug = currentLug();
-    const cents = centsOff(result.frequency, target);
-    lug.cents = cents;
-    lug.status = classifyStatus(cents);
+    lug.freq = result.frequency;
+    lug.hz = hzOff(result.frequency, target);
+    lug.status = classifyStatus(result.frequency, target);
 
     if (lug.status === "in-tune") {
       lug.locked = true;
