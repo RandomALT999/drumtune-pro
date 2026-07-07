@@ -1,12 +1,19 @@
 // Spectral-peak pitch detection (Goertzel scan), used for drum hits instead
-// of YIN. Drum overtones are inharmonic — the head's second mode sits near
-// 1.6x the fundamental, not an integer multiple — so no autocorrelation lag
-// ever lines the partials up and YIN-family detectors flip between modes
-// and spurious compromise dips (observed on-device as readings jumping
-// between two values ~60 Hz apart). In the frequency domain those same
-// partials are just two separate peaks: scan magnitudes across the search
-// range, pick the peak nearest the target, then fine-scan it for
-// cents-level precision.
+// of YIN. Drum overtones are inharmonic — the head's first overtone sits
+// near 1.6x the fundamental — so autocorrelation detectors flip between the
+// two. In the frequency domain they're just separate peaks.
+//
+// The pitch a drummer tunes is the FUNDAMENTAL, which is the drum's lowest
+// mode. Overtones are above it. But where you strike changes which is
+// louder — a center hit favours the fundamental, an edge/rim hit favours an
+// overtone — so magnitude-based picking flips as the strike moves (the exact
+// symptom seen on-device for snare/floor tom). Two things fix it:
+//   1. The search range is kept fairly narrow around the target, so at
+//      normal tuning distances the ~1.6x overtone falls outside it entirely.
+//   2. Among the peaks that ARE found, take the LOWEST one that's a real
+//      feature — not the loudest. The fundamental can legitimately be
+//      quieter than its overtone, but it's always lower in frequency.
+// Together these report the fundamental regardless of strike position.
 export function spectralPitch(buffer, sampleRate, { minFreq, maxFreq, targetFreq = null } = {}) {
   const n = buffer.length;
 
@@ -41,8 +48,10 @@ export function spectralPitch(buffer, sampleRate, { minFreq, maxFreq, targetFreq
   for (const m of mags) if (m > maxMag) maxMag = m;
   if (maxMag <= 0) return null;
 
-  // Local maxima that are at least a real feature, not scan noise.
-  const PEAK_FLOOR = 0.2;
+  // Local maxima that are at least a real feature, not scan noise. The floor
+  // is low because a fundamental excited by an edge strike can be much
+  // quieter than the overtone, and we still need to see it.
+  const PEAK_FLOOR = 0.12;
   const peaks = [];
   for (let i = 1; i < mags.length - 1; i++) {
     if (mags[i] >= mags[i - 1] && mags[i] >= mags[i + 1] && mags[i] / maxMag >= PEAK_FLOOR) {
@@ -52,31 +61,26 @@ export function spectralPitch(buffer, sampleRate, { minFreq, maxFreq, targetFreq
   }
   if (peaks.length === 0) return null;
 
-  // Strongest peak wins, discounted by distance from the target (0.5 per
-  // octave) so a louder overtone can't outvote the fundamental the user is
-  // actually tuning against. Without a target, loudest peak wins.
-  let best = null;
-  for (const p of peaks) {
-    const score = targetFreq ? p.mag - 0.5 * Math.abs(Math.log2(p.freq / targetFreq)) : p.mag;
-    if (!best || score > best.score) best = { ...p, score };
+  // Take the LOWEST peak that's still a genuine feature (a reasonable
+  // fraction of the strongest peak). Since we only analyze a loud
+  // post-strike window, the drum's own partials dominate any background,
+  // and its lowest partial is the fundamental — the pitch being tuned.
+  // Magnitude is deliberately NOT the selector: that's what let a louder
+  // overtone win on rim strikes. Without a target (not used in practice —
+  // hit mode always passes one) the loudest peak is the sane fallback.
+  const SIGNIFICANT = 0.15;
+  let best;
+  if (targetFreq) {
+    const strong = peaks.filter((p) => p.mag >= SIGNIFICANT);
+    const pool = strong.length ? strong : peaks;
+    best = pool.reduce((lowest, p) => (p.freq < lowest.freq ? p : lowest), pool[0]);
+  } else {
+    best = peaks.reduce((loudest, p) => (p.mag > loudest.mag ? p : loudest), peaks[0]);
   }
-
-  // Drum-mode pair check: a drumhead's fundamental and first overtone come
-  // as a pair roughly 1.5–1.8x apart. If the winner has a credible peak at
-  // ~1/1.6 of its own frequency, the winner IS the overtone — take the
-  // lower peak instead. This beats any amount of score tuning, because rim
-  // strikes routinely make the overtone the louder of the two.
-  const partner = peaks
-    .filter((p) => {
-      const ratio = p.freq / best.freq;
-      return ratio >= 0.55 && ratio <= 0.72 && p.mag >= 0.35;
-    })
-    .sort((a, b) => b.mag - a.mag)[0];
-  if (partner) best = { ...partner, score: best.score };
 
   // Fine scan around the winner for cents-level precision.
   let bestFreq = best.freq;
-  let bestMag = best.mag * maxMag;
+  let bestMag = magAt(best.freq);
   for (let f = best.freq - 1.5; f <= best.freq + 1.5; f += 0.05) {
     const m = magAt(f);
     if (m > bestMag) {

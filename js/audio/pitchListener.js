@@ -64,11 +64,13 @@ export class PitchListener {
     this.onUpdate = onUpdate || null;
     this.onHit = onHit || null;
     this.targetFreq = targetFreq || null;
-    // Narrower than before (was 0.5x–2.4x): a drum mid-tuning sits near its
-    // target, and the wider window mostly admitted overtones/subharmonics
-    // that caused the flip-flopping readings seen on-device.
+    // Kept narrow around the target on purpose: a drum's first overtone sits
+    // near ~1.6x its fundamental, so capping the range at 1.5x the target
+    // keeps that overtone out of the scan entirely at normal tuning
+    // distances, which (with lowest-peak selection in spectralPeak.js) is
+    // what stops the fundamental/overtone flip on snare and floor tom.
     this.minFreq = targetFreq ? Math.max(20, targetFreq * 0.55) : 30;
-    this.maxFreq = targetFreq ? targetFreq * 1.9 : 600;
+    this.maxFreq = targetFreq ? targetFreq * 1.5 : 600;
 
     // getUserMedia is only exposed in a secure context (HTTPS or localhost).
     // Serving this over plain HTTP to a phone on the same network — the
