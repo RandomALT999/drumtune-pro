@@ -453,21 +453,95 @@ button { font-family: inherit; }
 .overtone-row .harmonic-label { color: var(--text-dim); }
 
 /* Camera mode */
-.camera-placeholder {
-  aspect-ratio: 3/4;
-  background: linear-gradient(160deg, #1c1e26, #101116);
+#cam-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 4;
+  background: #000;
   border-radius: var(--radius);
+  overflow: hidden;
+}
+#cam-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+#cam-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* let the overlay own drag gestures */
+}
+#cam-hint {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #fff;
+  text-align: center;
+  background: linear-gradient(rgba(0, 0, 0, 0.6), transparent);
+  pointer-events: none;
+}
+#cam-msg {
+  position: absolute;
+  inset: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  color: var(--text-faint);
-  border: 1px dashed var(--border);
+  gap: 14px;
+  padding: 28px;
   text-align: center;
-  padding: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  background: rgba(10, 10, 13, 0.82);
 }
-.camera-placeholder svg { width: 48px; height: 48px; opacity: .6; }
+
+.cam-rim { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.cam-head { fill: rgba(255, 255, 255, 0.05); stroke: rgba(255, 255, 255, 0.18); stroke-width: 1; }
+.cam-center { fill: rgba(255, 255, 255, 0.65); }
+.cam-lug { fill: var(--surface); stroke: var(--accent); stroke-width: 2; }
+.cam-lug.active { fill: var(--accent); stroke: #fff; stroke-width: 2.5; }
+.cam-lug-num {
+  fill: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  paint-order: stroke;
+  stroke: #000;
+  stroke-width: 3px;
+}
+.cam-lug-num.active { fill: var(--accent); }
+.cam-strike-ring { fill: none; stroke: var(--accent-2); stroke-width: 3; animation: camPulse 1.1s ease-in-out infinite; }
+.cam-strike-dot { fill: var(--accent-2); }
+@keyframes camPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+#cam-controls { margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.cam-row { display: flex; align-items: center; gap: 10px; }
+#cam-lug-label { flex: 1; text-align: center; font-size: 13px; font-weight: 600; }
+.cam-ctl-label { font-size: 13px; color: var(--text-dim); width: 44px; }
+#cam-size { flex: 1; }
+.cam-lugs { flex: 1; }
+.cam-caption { font-size: 12px; color: var(--text-dim); line-height: 1.6; }
+.cam-key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  vertical-align: middle;
+  margin: 0 1px;
+}
+.cam-key.lug { background: var(--surface); border: 2px solid var(--accent); }
+.cam-key.active { background: var(--accent); }
+.cam-key.strike { background: var(--accent-2); }
 
 /* Empty state */
 .empty-state { text-align: center; padding: 40px 16px; color: var(--text-dim); }

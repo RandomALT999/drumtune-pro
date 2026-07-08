@@ -10,7 +10,7 @@ A mobile app that helps drummers tune toms and snares by listening to individual
 
 - No Apple Developer account or Xcode needed; uses Safari "Add to Home Screen" for personal iPhone use.
 - Web Audio API handles pitch/FFT analysis fine on iOS Safari.
-- Camera-based AR lug overlays are more constrained on web than native — **that screen is intentionally still a stub; camera/AR is deferred, everything else in the backend is now wired up.**
+- Camera-Assisted Mode is now built (`js/views/camera.js`) as an **alignment-guide overlay, not object-tracked AR** — it can't detect the actual drum in the frame (that needs real computer vision), so it shows a drag-to-position drum-circle guide over the live rear-camera feed with lug markers, the active lug in star order, and a strike target. Honest framing in the UI ("line the circle up with your drum") rather than pretending to track it.
 
 ## Competition Constraints (Maine App Challenge)
 
@@ -35,7 +35,7 @@ The user taps each lug on a drumhead while holding their phone nearby. The app d
 - **Tune All Drums / Kit Builder** — add/remove screen for assembling a kit from scratch: add any number of rack/floor toms (each with its own size + lug count), toggle a snare and/or bass drum on or off, then pick **one** Sound Style that's applied across every piece (each piece's actual Hz still comes out size-appropriate via `targetFrequencyFor`, not literally identical). Flows straight into tuning every piece in sequence, same as a genre preset, ending on the same kit-complete "save to your kits?" screen.
 - **Tuning Presets** — built-in genre kits (Rock, Jazz, Metal, Fusion, Funk, Gospel), each with one `styleId` shared across its pieces; per-piece target frequencies are derived from size + that style (see `targetFrequencyFor`) so the kit descends from high rack toms down to the floor tom for a uniform, related sound — not tuned independently. Tapping a kit opens a preset-detail screen to preview each piece's sound first, an **Edit Kit** button (opens the same Kit Builder add/remove screen, pre-populated — editing forks a new custom kit rather than mutating the built-in preset), and "Start Tuning Kit" which flows straight into tuning each piece in sequence, ending on a kit-complete summary.
 - **Advanced Frequency Analysis** (pro mode) — FFT spectrum, fundamental frequency detection, overtone visualization, lug consistency graph.
-- **Camera-Assisted Mode** — AR overlay of lug numbers on the live camera feed; the target lug glows when prompted.
+- **Camera-Assisted Mode** — live rear-camera feed with a drag-to-position drum-circle guide overlaid: lug markers around the rim, the active lug highlighted in the cross/star order (Prev/Next to cycle), and a pulsing strike target ~1 inch from the rim in line with that lug. Size + lug-count controls. An alignment guide the user lines up with their real drum, not object-tracked AR.
 - **Progress Indicator** — overall "Tuning Accuracy %" score with a completion animation.
 
 ### Known Hard Parts
@@ -64,7 +64,7 @@ The user taps each lug on a drumhead while holding their phone nearby. The app d
 - **Sonnet** — UI, navigation, standard app logic, most day-to-day work.
 - **Opus** — computationally intensive/precision work: YIN pitch detection implementation, real-time audio pipeline, FFT analysis, harmonic/overtone detection, smart adjustment estimation math.
 
-**Current stage: backend/audio pipeline implemented** (pitch detection, FFT, tuning math, synthesized preview tones, kit persistence) — built in-session on Sonnet at the user's direction, even though the model segmentation strategy above calls this Opus-tier work. If odd edge cases turn up in the YIN detection or turn-estimate math, that's the first place to look — consider a focused Opus pass on `js/audio/` specifically. **Camera-Assisted Mode (AR overlay) is explicitly still deferred/stubbed** — not part of this pass.
+**Current stage: full feature set implemented** (pitch detection, FFT, tuning math, synthesized preview tones, kit persistence, and now the Camera-Assisted alignment overlay). If odd edge cases turn up in the spectral-peak detection or turn-estimate math, that's the first place to look — consider a focused Opus pass on `js/audio/` specifically.
 
 **Session hygiene:** start a fresh conversation when switching between feature areas (e.g., UI → audio pipeline) rather than carrying one long thread. Keep this CLAUDE.md concise and update it as architecture decisions land, rather than letting context balloon.
 
@@ -76,7 +76,7 @@ The user taps each lug on a drumhead while holding their phone nearby. The app d
 
 ## Open TODOs
 - [ ] Confirm April 3, 2027 deadline is still current on the official Maine App Challenge site before final crunch.
-- [ ] Build Camera-Assisted Mode (AR lug overlay) — still just a stub, deferred by request.
+- [x] ~~Build Camera-Assisted Mode~~ — done as an alignment-guide overlay (`js/views/camera.js`): live rear camera + drag-to-position drum-circle guide, lugs, active-lug-in-star-order, strike target. NOT object-tracked AR (no CV drum detection) — a real-CV upgrade to auto-detect and track the drum's ellipse would be the next step if wanted.
 - [x] ~~Replace the hardcoded per-kit descending tom targets with real interval math~~ — done via `targetFrequencyFor(drumType, size, styleId)`; still a mock physics model (linear base-freq table + style multiplier), not real acoustic modeling, but no longer hand-picked magic numbers.
 - [ ] Real snare buzz/choke/looseness detection — currently a labeled mock on the Snare Tuning screen.
 - [ ] Test the YIN pitch detector against real drum hits on a real device — only exercised in a sandboxed preview browser so far (no mic hardware there), so mic-permission and low-frequency (floor tom/bass drum) accuracy are unverified in practice.

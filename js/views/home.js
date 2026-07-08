@@ -62,8 +62,8 @@ export function renderHome() {
     <button class="tap-card" data-route="camera">
       <div class="emoji-badge">📷</div>
       <div class="tap-card-body">
-        <div class="tap-card-title">Camera-Assisted Mode<span class="badge-soon">Planned</span></div>
-        <div class="tap-card-sub">AR lug overlay on live camera feed</div>
+        <div class="tap-card-title">Camera-Assisted Mode</div>
+        <div class="tap-card-sub">Line up lugs &amp; strike points on the live camera</div>
       </div>
       <div class="chevron">›</div>
     </button>
