@@ -165,16 +165,6 @@ export function kitPieceSummary(kit) {
   return kit.pieces.map((p) => p.label).join(" · ");
 }
 
-// Every lug starts unmeasured — no pre-filled "already in tune" mock state.
-// status: "pending" | "in-tune" | "slight" | "off"
-export function generateLugs(count) {
-  return Array.from({ length: count }, (_, i) => ({
-    id: i + 1,
-    status: "pending",
-    cents: null,
-  }));
-}
-
 // Standard cross-pattern ("star") tuning order: opposite-ish lugs alternate
 // so tension is pulled evenly across the head instead of working around it.
 export function generateCrossOrder(count) {

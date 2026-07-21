@@ -2,40 +2,48 @@ import { qs } from "../util.js";
 import { navigate, registerCleanup } from "../main.js";
 import { getKit, generateCrossOrder } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, hzOff, classifyStatus, turnEstimate, IN_TUNE_HZ } from "../audio/tuningMath.js";
+import { centsOff, hzOff, turnEstimate, IN_TUNE_HZ } from "../audio/tuningMath.js";
 
-export function buildLugMapSvg(lugs, activeLugId) {
+// Maps each lug id -> its step number in the cross/star tightening order.
+// The diagram labels lugs by STEP, not by physical id, so the numbers
+// themselves tell you what order to turn them in.
+export function starSteps(lugCount) {
+  const steps = new Map();
+  generateCrossOrder(lugCount).forEach((lugId, i) => steps.set(lugId, i + 1));
+  return steps;
+}
+
+// All lugs are shown in the same state because the method turns them all by
+// the same amount every round — there's no single "active" lug any more.
+// The strike target sits at the CENTER of the head: a center hit excites the
+// fundamental cleanly, where an edge hit near a lug excites an overtone
+// louder than the fundamental and makes readings flip.
+export function buildLugMapSvg(lugCount, { inTune = false } = {}) {
   const cx = 130,
     cy = 130,
     shellR = 108,
     dotR = 15;
-  const dots = lugs
-    .map((lug, i) => {
-      const angle = (i / lugs.length) * 2 * Math.PI - Math.PI / 2;
-      const x = cx + shellR * Math.cos(angle);
-      const y = cy + shellR * Math.sin(angle);
-      const isActive = lug.id === activeLugId;
-      // lug.hz is target - freq: positive = low (tighten, ↓ tension arrow).
-      const arrow =
-        lug.hz == null
-          ? ""
-          : lug.hz > IN_TUNE_HZ
-          ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↓</text>`
-          : lug.hz < -IN_TUNE_HZ
-          ? `<text x="${x}" y="${y + 4}" class="lug-label" fill="#0c0c0e" font-size="13">↑</text>`
-          : "";
-      return `
-        <g>
-          <circle cx="${x}" cy="${y}" r="${dotR}" class="lug-dot ${lug.status} ${isActive ? "active-pulse" : ""}" />
-          ${arrow || `<text x="${x}" y="${y + 4}" class="lug-label" fill="${lug.status === "pending" ? "var(--text-dim)" : "#0c0c0e"}">${lug.id}</text>`}
-        </g>`;
-    })
-    .join("");
+  const steps = starSteps(lugCount);
+
+  let dots = "";
+  for (let i = 0; i < lugCount; i++) {
+    const angle = (i / lugCount) * 2 * Math.PI - Math.PI / 2;
+    const x = cx + shellR * Math.cos(angle);
+    const y = cy + shellR * Math.sin(angle);
+    dots += `
+      <g>
+        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${dotR}" class="lug-dot ${inTune ? "in-tune" : "all-active"}" />
+        <text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" class="lug-label" fill="#0c0c0e">${steps.get(i + 1)}</text>
+      </g>`;
+  }
 
   return `
     <svg class="lug-map" viewBox="0 0 260 260">
       <circle cx="${cx}" cy="${cy}" r="${shellR + dotR + 6}" class="drum-shell" />
       <circle cx="${cx}" cy="${cy}" r="${shellR - 10}" class="drum-head" />
+      <circle cx="${cx}" cy="${cy}" r="30" class="strike-ring" />
+      <circle cx="${cx}" cy="${cy}" r="5" class="strike-dot" />
+      <text x="${cx}" y="${cy + 50}" class="strike-label">strike center</text>
       ${dots}
     </svg>`;
 }
@@ -52,33 +60,25 @@ export function accuracyRingSvg(pct) {
     </svg>`;
 }
 
-// Lugs listed in the cross ("star") tightening order — opposite lugs
-// alternate so tension pulls evenly across the head instead of walking
-// around the rim. Same order Guided Mode uses.
-export function starOrder(lugs) {
-  return generateCrossOrder(lugs.length).map((id) => lugs.find((l) => l.id === id));
-}
-
 export function tuneBadge(hz) {
-  if (hz == null) return { cls: "good", text: "Strike the lug to begin" };
+  if (hz == null) return { cls: "good", text: "Not measured yet" };
   if (hz > IN_TUNE_HZ) return { cls: "loose", text: `${hz.toFixed(1)} Hz low — tighten` };
   if (hz < -IN_TUNE_HZ) return { cls: "tight", text: `${Math.abs(hz).toFixed(1)} Hz high — loosen` };
   return { cls: "good", text: "In tune ✓" };
 }
 
-// Collapsible mic-placement guidance shown on the tuning screens — readings
-// are only as consistent as where the phone sits relative to the lug.
+// Collapsible guidance — the method depends on doing these consistently.
 export function tuningTipsHtml() {
   return `
     <details class="tips-card">
       <summary>📱 How to get consistent readings</summary>
       <ul>
-        <li>Hold the phone 3–6 inches above the drumhead, close to the lug you're tuning, so that lug's pitch dominates the mic.</li>
-        <li>Strike once, about 1 inch in from the rim at that lug, then let it ring — only the initial hit is measured, since the pitch drifts as the note fades.</li>
-        <li>If readings keep flipping between two different values, strike a little closer to the center — near the rim the head rings at two pitches at once, which can confuse the reading.</li>
-        <li>Wait for the reading, adjust the tension rod, then strike again.</li>
-        <li>Tune somewhere quiet — voices and music can throw off detection.</li>
-        <li>To hear one head alone, rest the drum's other head on carpet or your leg to mute it.</li>
+        <li>Start with every lug finger tight and even — snug by hand, no key yet. That's the baseline the whole method builds on.</li>
+        <li>Hold the phone 6–12 inches above the middle of the head.</li>
+        <li>Strike the <b>center</b> of the head once, firmly, then let it ring. Center hits give the drum's true fundamental; hits near the rim ring at a second, higher pitch that can confuse any tuner.</li>
+        <li>Turn <b>every</b> lug by the same amount each round, following the numbers on the diagram (the star pattern) — that's what keeps the head even.</li>
+        <li>As you close in, make smaller moves — an eighth turn or less.</li>
+        <li>Tune somewhere quiet, and mute the drum's other head (rest it on carpet or your leg) so only the head you're tuning rings.</li>
       </ul>
     </details>`;
 }
@@ -156,114 +156,137 @@ export function wireKitNav(view, params) {
   });
 }
 
-// Mic-driven tuning: mounts the accuracy ring, lug map, per-hit readout and
-// a Start/Stop Listening button into `container`. Each detected drum strike
-// gives one measurement (initial-attack pitch only — the ring-out drifts).
-// A lug that lands within tolerance locks in as tuned permanently and the
-// active lug advances to the next unlocked one until every lug is locked,
-// so later noise or decaying ring can't knock a finished lug back out.
-// Shared by Tuning and Snare Tuning so both behave identically.
-// Returns { stop } for callers that want to stop it early.
-export function mountLiveTuning(container, { lugs, target, fftSize, styleName }) {
-  const listener = new PitchListener();
-  // Advance through lugs in the cross/star order, not numeric order, so the
-  // head is pulled evenly. nextActive() = first unlocked lug in that order.
-  const order = starOrder(lugs);
-  const nextActive = () => order.find((l) => !l.locked) || order[order.length - 1];
-  let activeLug = nextActive();
-  let listening = false;
-  let lastHit = null; // { freq, hz } from the most recent strike
-  let hitFailed = false; // strike detected but pitch unreadable
-  let micError = null;
-  let allDone = lugs.every((l) => l.locked);
+// How far off "0% progress" sits, in Hz beyond the in-tune window.
+const PROGRESS_RANGE_HZ = 60;
 
-  function statusLine() {
-    if (allDone) return { cls: "good", text: "All lugs in tune ✓" };
-    if (lastHit) return tuneBadge(lastHit.hz);
-    if (hitFailed) return { cls: "loose", text: "Couldn't read that — strike once, cleanly" };
-    if (listening) return { cls: "good", text: `Strike lug ${activeLug.id} near the rim` };
-    if (activeLug.hz != null) return tuneBadge(activeLug.hz);
-    return { cls: "good", text: "Start listening, then strike the lug" };
+// Mic-driven tuning, round based:
+//   prep    — hand-tighten every lug evenly, then start
+//   tuning  — strike the CENTER; app reports how far off and how much to
+//             turn EVERY lug (same amount, in the numbered star order);
+//             repeat until the pitch lands inside the ±IN_TUNE_HZ window
+//   done    — in tune
+// Turning all lugs equally from an even starting point keeps the head even
+// by construction, and every measurement comes from the same spot (center),
+// which is far more repeatable than chasing one lug at a time.
+// Shared by Tuning, Snare Tuning and Guided Tuning so all three behave the
+// same. Returns { stop } for callers that want to stop it early.
+export function mountLiveTuning(container, { lugCount, target, fftSize, styleName, voice = false }) {
+  const listener = new PitchListener();
+  let phase = "prep"; // prep | tuning | done
+  let listening = false;
+  let lastHit = null; // { freq, hz }
+  let hitFailed = false;
+  let micError = null;
+  let round = 0;
+  let voiceOn = voice;
+
+  function speak(text) {
+    if (!voiceOn || !text || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    } catch (e) {
+      /* speech synthesis unavailable in this browser */
+    }
+  }
+
+  function currentTurn() {
+    if (!lastHit) return null;
+    return turnEstimate(centsOff(lastHit.freq, target));
+  }
+
+  function instructionText() {
+    if (phase === "prep") {
+      return "First, hand-tighten every lug until it's finger tight and even — snug by hand, no drum key yet. Then start tuning.";
+    }
+    if (phase === "done") {
+      return "In tune. Every lug got the same treatment, so the head should be even — strike the center once more if you want to confirm.";
+    }
+    if (hitFailed) return "Didn't catch that one — strike the center of the head again, firmly.";
+    if (!lastHit) return "Strike the center of the head once, firmly, and let it ring.";
+    const turn = currentTurn();
+    if (!turn || turn.turns === 0) return "Very close — strike the center again to confirm.";
+    return `Turn every lug ${turn.label} to ${turn.direction}, following the numbers on the diagram. Then strike the center again.`;
+  }
+
+  function accuracyPct() {
+    if (!lastHit) return 0;
+    const a = Math.abs(lastHit.hz);
+    if (a <= IN_TUNE_HZ) return 100;
+    return Math.max(0, Math.round(100 * (1 - (a - IN_TUNE_HZ) / PROGRESS_RANGE_HZ)));
+  }
+
+  function buttonLabel() {
+    if (phase === "prep") return "All lugs finger tight — Start";
+    if (phase === "done") return "Tune Again";
+    return listening ? "Stop Listening" : "Resume Listening";
   }
 
   function render() {
-    const inTuneCount = lugs.filter((l) => l.locked).length;
-    const accuracy = Math.round((inTuneCount / lugs.length) * 100);
-    const badge = statusLine();
-    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, activeLug.hz);
-    const turn = lastHit ? turnEstimate(centsOff(lastHit.freq, target)) : null;
+    const pct = accuracyPct();
+    const badge = tuneBadge(lastHit ? lastHit.hz : null);
+    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, null);
+    const turn = currentTurn();
+    const showTurn = phase === "tuning" && turn && turn.turns > 0;
 
     container.innerHTML = `
       <div class="accuracy-ring-wrap card">
-        ${accuracyRingSvg(accuracy)}
+        ${accuracyRingSvg(pct)}
         <div>
-          <div class="accuracy-text">${accuracy}% Tuning Accuracy</div>
-          <div class="accuracy-sub">${inTuneCount} of ${lugs.length} lugs in tune</div>
+          <div class="accuracy-text">${lastHit ? `${pct}% to target` : "Not measured yet"}</div>
+          <div class="accuracy-sub">${
+            lastHit
+              ? `${Math.abs(lastHit.hz).toFixed(1)} Hz ${lastHit.hz > 0 ? "below" : "above"} target${round ? ` · round ${round}` : ""}`
+              : "Strike the center to measure"
+          }</div>
         </div>
       </div>
 
       <div class="lug-map-wrap">
-        ${buildLugMapSvg(lugs, allDone ? -1 : activeLug.id)}
+        ${buildLugMapSvg(lugCount, { inTune: phase === "done" })}
         <div class="pitch-readout">
           <div class="current-freq">${displayFreq.toFixed(1)} Hz</div>
-          <div class="target-freq">Target: ${target.toFixed(1)} Hz · Lug ${activeLug.id}${styleName ? ` · ${styleName}` : ""}</div>
+          <div class="target-freq">Target: ${target.toFixed(1)} Hz${styleName ? ` · ${styleName}` : ""}</div>
           <div class="cents-badge ${badge.cls}">${badge.text}</div>
-          ${turn && turn.turns > 0 ? `<div class="turn-estimate">≈ ${turn.label} — ${turn.direction}</div>` : ""}
         </div>
-        <div class="lug-legend">
-          <span><i class="legend-dot" style="background:var(--green)"></i>In tune</span>
-          <span><i class="legend-dot" style="background:var(--yellow)"></i>Slight</span>
-          <span><i class="legend-dot" style="background:var(--red)"></i>Off</span>
-        </div>
+        <div class="lug-legend-note">Numbers = the order to turn the lugs. Turn them all by the same amount.</div>
+      </div>
+
+      <div class="tune-step card">
+        <div class="tune-step-title">${phase === "prep" ? "Before you start" : phase === "done" ? "Finished" : `Round ${round + 1}`}</div>
+        <div class="tune-step-text">${instructionText()}</div>
+        ${showTurn ? `<div class="turn-callout">${turn.label} on <b>every</b> lug · ${turn.direction}</div>` : ""}
       </div>
 
       ${micError ? `<div class="mic-error">${micError}</div>` : ""}
 
       <div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn ${listening ? "btn-primary listening-pulse" : "btn-secondary"}" id="tap-lug-btn" ${allDone ? "disabled" : ""}>
-          ${allDone ? "Done ✓" : listening ? "Stop Listening" : "Start Listening"}
-        </button>
+        <button class="btn ${listening ? "btn-primary listening-pulse" : "btn-primary"}" id="tap-lug-btn">${buttonLabel()}</button>
       </div>
     `;
-    qs(container, "#tap-lug-btn").addEventListener("click", toggle);
+    qs(container, "#tap-lug-btn").addEventListener("click", onMainButton);
   }
 
   function handleHit(result) {
-    if (allDone) return;
+    if (phase !== "tuning") return;
     if (!result) {
       hitFailed = true;
-      lastHit = null;
       render();
       return;
     }
     hitFailed = false;
     const hz = hzOff(result.frequency, target);
     lastHit = { freq: result.frequency, hz };
-    activeLug.hz = hz;
-    activeLug.status = classifyStatus(result.frequency, target);
-
-    if (activeLug.status === "in-tune") {
-      // Lock it in — once a lug hits the target range it stays counted as
-      // tuned; only unlocked lugs get measured from here on.
-      activeLug.locked = true;
-      const next = order.find((l) => !l.locked);
-      if (next) {
-        activeLug = next;
-        lastHit = null;
-      } else {
-        allDone = true;
-        stopListening();
-      }
+    round++;
+    if (Math.abs(hz) <= IN_TUNE_HZ) {
+      phase = "done";
+      stopListening();
     }
     render();
+    speak(instructionText());
   }
 
-  async function toggle() {
-    if (listening) {
-      stopListening();
-      render();
-      return;
-    }
+  async function startListening() {
     micError = null;
     try {
       await listener.start({ targetFreq: target, fftSize, onHit: handleHit });
@@ -272,16 +295,50 @@ export function mountLiveTuning(container, { lugs, target, fftSize, styleName })
     } catch (err) {
       micError = micErrorMessage(err);
     }
+  }
+
+  async function onMainButton() {
+    if (phase === "done") {
+      // Tune Again: keep the target, reset the round state.
+      phase = "tuning";
+      lastHit = null;
+      hitFailed = false;
+      round = 0;
+      await startListening();
+      render();
+      speak(instructionText());
+      return;
+    }
+    if (phase === "prep") {
+      phase = "tuning";
+      await startListening();
+      render();
+      speak(instructionText());
+      return;
+    }
+    if (listening) {
+      stopListening();
+      render();
+      return;
+    }
+    await startListening();
     render();
   }
 
   function stopListening() {
     if (listening) listener.stop();
     listening = false;
-    lastHit = null;
     hitFailed = false;
   }
 
   render();
-  return { stop: stopListening };
+  return {
+    stop: stopListening,
+    setVoice(on) {
+      voiceOn = on;
+    },
+    speakCurrent() {
+      speak(instructionText());
+    },
+  };
 }

@@ -1,11 +1,10 @@
 import { el, qs } from "../util.js";
 import { navigate } from "../main.js";
-import { generateLugs } from "../data.js";
 import { playToneForDrumType } from "../audio/synth.js";
 import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning, tuningTipsHtml } from "./tuningShared.js";
 
 export function renderSnareTuning(params) {
-  const lugs = generateLugs(params.lugCount || 8);
+  const lugCount = params.lugCount || 8;
   const target = params.target || 200;
 
   const view = el(`
@@ -56,7 +55,7 @@ export function renderSnareTuning(params) {
     ${kitNavButtonHtml(params)}
   `);
 
-  mountLiveTuning(qs(view, "#tuning-body"), { lugs, target, fftSize: 2048, styleName: params.styleName });
+  mountLiveTuning(qs(view, "#tuning-body"), { lugCount, target, fftSize: 2048, styleName: params.styleName });
 
   qs(view, "#guided-btn").addEventListener("click", () => navigate("guided-tuning", params));
   // Plays the target tone in place instead of navigating to Sound Preview —

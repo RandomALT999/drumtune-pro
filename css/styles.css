@@ -298,6 +298,25 @@ button { font-family: inherit; }
 .lug-dot.off { fill: var(--red); stroke: var(--red); }
 .lug-dot.pending { fill: var(--surface-3); stroke: var(--text-faint); }
 .lug-dot.active-pulse { filter: drop-shadow(0 0 6px currentColor); }
+/* Every lug is turned together, so they all share one state. */
+.lug-dot.all-active { fill: var(--accent); stroke: var(--accent); }
+
+/* Center strike target — where you hit to measure */
+.strike-ring {
+  fill: none;
+  stroke: var(--accent-2);
+  stroke-width: 2.5;
+  stroke-dasharray: 5 5;
+  animation: listeningPulse 1.6s ease-in-out infinite;
+}
+.strike-dot { fill: var(--accent-2); }
+.strike-label {
+  fill: var(--accent-2);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: middle;
+  letter-spacing: .04em;
+}
 
 .lug-label {
   font-size: 11px;
@@ -326,6 +345,38 @@ button { font-family: inherit; }
 .cents-badge.good { background: rgba(61,220,132,.15); color: var(--green); }
 
 .turn-estimate { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+
+.lug-legend-note {
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: center;
+  margin-top: 6px;
+  line-height: 1.45;
+  max-width: 300px;
+}
+
+/* Round-by-round instruction card */
+.tune-step { margin-top: 4px; }
+.tune-step-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--accent);
+  font-weight: 700;
+}
+.tune-step-text { font-size: 15px; line-height: 1.5; margin-top: 6px; }
+.turn-callout {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,122,69,.12);
+  border: 1px solid rgba(255,122,69,.35);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
+}
+.turn-callout b { color: var(--accent); }
 
 .mic-error {
   background: rgba(255,84,112,.1);

@@ -1,15 +1,14 @@
 import { el, qs } from "../util.js";
 import { registerCleanup } from "../main.js";
-import { generateCrossOrder } from "../data.js";
+import { starSteps } from "./tuningShared.js";
 
 // Camera-assisted overlay. Honest scope: this is an ALIGNMENT GUIDE, not
-// object-tracked AR — the app can't actually detect the drum in the frame
-// (that needs real computer vision). Instead it shows the live rear camera
-// with a drum-circle guide the user lines up with their real drum: lug
-// positions around the rim, the active lug highlighted in the cross/star
-// tuning order, and a pulsing target for where to strike that lug. The guide
-// is drag-to-move and size-adjustable so it can be fitted to any drum at any
-// angle/distance.
+// object-tracked AR — the app can't detect the actual drum in the frame
+// (that needs real computer vision). It shows the live rear camera with a
+// drum-circle guide the user lines up with their real drum: lug positions
+// numbered in the cross/star turning order, and the strike target at the
+// CENTER of the head, matching the tuning method (strike center, then turn
+// every lug by the same amount in the numbered order).
 function cameraErrorMessage(err) {
   if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     return "Camera needs a secure connection (HTTPS). Open the hosted https:// link on your phone to use camera mode.";
@@ -25,8 +24,6 @@ function cameraErrorMessage(err) {
 
 export function renderCamera(params = {}) {
   let lugCount = Math.min(12, Math.max(4, params.lugCount || 6));
-  let order = generateCrossOrder(lugCount);
-  let stepIndex = 0;
   let stream = null;
   let center = null; // { x, y } in px, drag-positioned
   let dragging = false;
@@ -41,11 +38,6 @@ export function renderCamera(params = {}) {
 
     <div id="cam-controls">
       <div class="cam-row">
-        <button class="btn btn-sm btn-secondary" id="cam-prev">◀ Prev</button>
-        <div id="cam-lug-label"></div>
-        <button class="btn btn-sm btn-secondary" id="cam-next">Next ▶</button>
-      </div>
-      <div class="cam-row">
         <label class="cam-ctl-label">Size</label>
         <input type="range" id="cam-size" min="55" max="94" value="76" />
       </div>
@@ -58,9 +50,9 @@ export function renderCamera(params = {}) {
         </div>
       </div>
       <div class="cam-caption">
-        <span class="cam-key lug"></span> Lugs · <span class="cam-key active"></span> tune this one next ·
-        <span class="cam-key strike"></span> strike here (about an inch from the rim, in line with the lug).
-        Hit the drum's center instead to hear its overall pitch.
+        <span class="cam-key strike"></span> Strike the <b>center</b> to measure ·
+        <span class="cam-key lug"></span> the numbers are the order to turn the lugs —
+        turn every one by the same amount each round.
       </div>
     </div>
   `);
@@ -76,47 +68,32 @@ export function renderCamera(params = {}) {
     return { w: r.width, h: r.height };
   }
 
-  function radius(w, h) {
-    return Math.min(w, h) * 0.5 * (Number(qs(view, "#cam-size").value) / 100);
-  }
-
   function renderOverlay() {
     const { w, h } = size();
     if (!w || !h) return;
     if (!center) center = { x: w / 2, y: h / 2 };
     const cx = Math.max(0, Math.min(w, center.x));
     const cy = Math.max(0, Math.min(h, center.y));
-    const r = radius(w, h);
-    const activeLug = order[stepIndex];
+    const r = Math.min(w, h) * 0.5 * (Number(qs(view, "#cam-size").value) / 100);
+    const steps = starSteps(lugCount);
 
     let lugs = "";
     for (let i = 0; i < lugCount; i++) {
       const ang = (i / lugCount) * 2 * Math.PI - Math.PI / 2;
       const lx = cx + r * Math.cos(ang);
       const ly = cy + r * Math.sin(ang);
-      const tx = cx + (r + 20) * Math.cos(ang);
-      const ty = cy + (r + 20) * Math.sin(ang);
-      const active = i + 1 === activeLug;
-      lugs += `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="${active ? 11 : 8}" class="cam-lug ${active ? "active" : ""}" />`;
-      lugs += `<text x="${tx.toFixed(1)}" y="${ty.toFixed(1)}" class="cam-lug-num ${active ? "active" : ""}">${i + 1}</text>`;
+      lugs += `<circle cx="${lx.toFixed(1)}" cy="${ly.toFixed(1)}" r="13" class="cam-lug active" />`;
+      lugs += `<text x="${lx.toFixed(1)}" y="${(ly + 1).toFixed(1)}" class="cam-lug-num">${steps.get(i + 1)}</text>`;
     }
-
-    // Strike target: ~1 inch in from the rim, in line with the active lug —
-    // where you actually tap to read/adjust that one lug's tension.
-    const aAng = ((activeLug - 1) / lugCount) * 2 * Math.PI - Math.PI / 2;
-    const sx = cx + r * 0.8 * Math.cos(aAng);
-    const sy = cy + r * 0.8 * Math.sin(aAng);
 
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = `
       <circle cx="${cx}" cy="${cy}" r="${r}" class="cam-rim" />
       <circle cx="${cx}" cy="${cy}" r="${(r * 0.9).toFixed(1)}" class="cam-head" />
-      <circle cx="${cx}" cy="${cy}" r="4" class="cam-center" />
+      <circle cx="${cx}" cy="${cy}" r="${Math.max(18, r * 0.22).toFixed(1)}" class="cam-strike-ring" />
+      <circle cx="${cx}" cy="${cy}" r="5" class="cam-strike-dot" />
       ${lugs}
-      <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="15" class="cam-strike-ring" />
-      <circle cx="${sx.toFixed(1)}" cy="${sy.toFixed(1)}" r="4" class="cam-strike-dot" />
     `;
-    qs(view, "#cam-lug-label").textContent = `Lug ${activeLug} · step ${stepIndex + 1} of ${lugCount}`;
   }
 
   function showMessage(text) {
@@ -177,20 +154,10 @@ export function renderCamera(params = {}) {
     renderOverlay();
   }
 
-  qs(view, "#cam-prev").addEventListener("click", () => {
-    stepIndex = (stepIndex - 1 + lugCount) % lugCount;
-    renderOverlay();
-  });
-  qs(view, "#cam-next").addEventListener("click", () => {
-    stepIndex = (stepIndex + 1) % lugCount;
-    renderOverlay();
-  });
   qs(view, "#cam-size").addEventListener("input", renderOverlay);
 
   function setLugCount(n) {
     lugCount = Math.min(12, Math.max(4, n));
-    order = generateCrossOrder(lugCount);
-    stepIndex = Math.min(stepIndex, lugCount - 1);
     qs(view, "#cam-lug-count").textContent = lugCount;
     renderOverlay();
   }

@@ -1,6 +1,5 @@
 import { el, qs } from "../util.js";
 import { registerCleanup } from "../main.js";
-import { generateLugs } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
 import { findOvertones } from "../audio/fftPeaks.js";
 
@@ -115,22 +114,6 @@ export function renderAdvanced() {
     </div>
     <div class="card" id="overtone-card">
       ${EMPTY_OVERTONES_HTML}
-    </div>
-
-    <div class="section-title">Lug Consistency</div>
-    <div class="card">
-      ${generateLugs(8)
-        .map((lug) => {
-          const pct = lug.cents == null ? 0 : Math.max(6, 100 - Math.abs(lug.cents) * 2);
-          const color =
-            lug.status === "in-tune" ? "var(--green)" : lug.status === "slight" ? "var(--yellow)" : lug.status === "off" ? "var(--red)" : "var(--text-faint)";
-          return `
-          <div class="meter-row">
-            <div class="meter-row-label"><span>Lug ${lug.id}</span><span>${lug.cents == null ? "—" : lug.cents + "¢"}</span></div>
-            <div class="meter"><div class="meter-fill" style="width:${pct}%; background:${color};"></div></div>
-          </div>`;
-        })
-        .join("")}
     </div>
   `);
 

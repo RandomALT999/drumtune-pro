@@ -15,24 +15,23 @@ export function hzOff(freq, target) {
 // pitches — unreachable by hand. ±10 Hz is the real-world reachable window
 // (on-device finding).
 export const IN_TUNE_HZ = 10;
-const SLIGHT_HZ = 25; // within this but past IN_TUNE_HZ = yellow, else red
-
-export function classifyStatus(freq, target) {
-  const abs = Math.abs(target - freq);
-  if (abs <= IN_TUNE_HZ) return "in-tune";
-  if (abs <= SLIGHT_HZ) return "slight";
-  return "off";
-}
 
 const EIGHTHS_LABEL = ["0", "1/8", "1/4", "3/8", "1/2", "5/8", "3/4", "7/8", "1"];
 
-// Heuristic: ~60 cents of pitch change per 1/8 turn on a typical single-ply
-// batter head. Real turn sensitivity varies by head/shell/tension range, so
-// this is a rough estimate until the real audio-to-mechanical model lands.
+// Heuristic for the all-lugs-at-once method: turning EVERY lug by the same
+// amount raises tension across the whole head, so it moves the pitch further
+// than the same turn on a single lug would (~100 cents per 1/8 turn here vs.
+// the ~60 used when this estimated a single lug). Still a rough estimate,
+// not a calibrated mechanical model — head ply, shell, and how much tension
+// is already on the drum all change the real figure, and the response is
+// non-linear (a turn near finger-tight moves pitch much more than a turn at
+// high tension). Being iterative covers for that: re-measure, turn again.
+const CENTS_PER_EIGHTH_TURN = 100;
+
 export function turnEstimate(cents) {
   const abs = Math.abs(cents);
   if (abs <= 12) return { turns: 0, label: "Dialed in", direction: null };
   const direction = cents > 0 ? "tighten" : "loosen";
-  const eighths = Math.min(8, Math.max(1, Math.round(abs / 60)));
+  const eighths = Math.min(8, Math.max(1, Math.round(abs / CENTS_PER_EIGHTH_TURN)));
   return { turns: eighths / 8, label: `${EIGHTHS_LABEL[eighths]} turn`, direction };
 }
