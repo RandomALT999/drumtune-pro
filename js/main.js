@@ -2,7 +2,6 @@ import { renderHome } from "./views/home.js";
 import { renderDrumSetup } from "./views/drumSetup.js";
 import { renderTuning } from "./views/tuning.js";
 import { renderSnareTuning } from "./views/snareTuning.js";
-import { renderGuidedTuning } from "./views/guidedTuning.js";
 import { renderSoundPreview } from "./views/soundPreview.js";
 import { renderPresets } from "./views/presets.js";
 import { renderPresetDetail } from "./views/presetDetail.js";
@@ -10,7 +9,6 @@ import { renderKitBuilder } from "./views/kitBuilder.js";
 import { renderKitComplete } from "./views/kitComplete.js";
 import { renderKits } from "./views/kits.js";
 import { renderAdvanced } from "./views/advanced.js";
-import { renderCamera } from "./views/camera.js";
 import { renderAbout } from "./views/about.js";
 import { installAudioUnlock } from "./audio/unlockAudio.js";
 
@@ -23,7 +21,6 @@ const routes = {
   "drum-setup": { title: "Drum Setup", render: renderDrumSetup },
   tuning: { title: "Tuning", render: renderTuning },
   "snare-tuning": { title: "Snare Tuning", render: renderSnareTuning },
-  "guided-tuning": { title: "Guided Tuning", render: renderGuidedTuning },
   "sound-preview": { title: "Sound Preview", render: renderSoundPreview },
   presets: { title: "Tuning Presets", render: renderPresets },
   "preset-detail": { title: "Kit Preview", render: renderPresetDetail },
@@ -35,7 +32,6 @@ const routes = {
   "kit-complete": { title: "Kit Complete", render: renderKitComplete },
   kits: { title: "Saved Kits", render: renderKits },
   advanced: { title: "Frequency Analysis", render: renderAdvanced },
-  camera: { title: "Camera Mode", render: renderCamera },
   about: { title: "About", render: renderAbout },
 };
 

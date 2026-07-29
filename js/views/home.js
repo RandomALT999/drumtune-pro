@@ -57,16 +57,6 @@ export function renderHome() {
       </div>
       <div class="chevron">›</div>
     </button>
-
-    <div class="section-title">Explore</div>
-    <button class="tap-card" data-route="camera">
-      <div class="emoji-badge">📷</div>
-      <div class="tap-card-body">
-        <div class="tap-card-title">Camera-Assisted Mode</div>
-        <div class="tap-card-sub">Line up lugs &amp; strike points on the live camera</div>
-      </div>
-      <div class="chevron">›</div>
-    </button>
   `);
 
   qsa(view, "[data-route]").forEach((btn) => {

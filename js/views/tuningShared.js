@@ -2,12 +2,12 @@ import { qs } from "../util.js";
 import { navigate, registerCleanup } from "../main.js";
 import { getKit, generateCrossOrder } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, hzOff, turnEstimate, IN_TUNE_HZ } from "../audio/tuningMath.js";
+import { centsOff, hzOff, turnEstimate, IN_TUNE_HZ, toleranceForStep } from "../audio/tuningMath.js";
 
 // Maps each lug id -> its step number in the cross/star tightening order.
 // The diagram labels lugs by STEP, not by physical id, so the numbers
 // themselves tell you what order to turn them in.
-export function starSteps(lugCount) {
+function starSteps(lugCount) {
   const steps = new Map();
   generateCrossOrder(lugCount).forEach((lugId, i) => steps.set(lugId, i + 1));
   return steps;
@@ -60,11 +60,38 @@ export function accuracyRingSvg(pct) {
     </svg>`;
 }
 
-export function tuneBadge(hz) {
+export function tuneBadge(hz, tolerance = IN_TUNE_HZ) {
   if (hz == null) return { cls: "good", text: "Not measured yet" };
-  if (hz > IN_TUNE_HZ) return { cls: "loose", text: `${hz.toFixed(1)} Hz low — tighten` };
-  if (hz < -IN_TUNE_HZ) return { cls: "tight", text: `${Math.abs(hz).toFixed(1)} Hz high — loosen` };
+  if (hz > tolerance) return { cls: "loose", text: `${hz.toFixed(1)} Hz low — tighten` };
+  if (hz < -tolerance) return { cls: "tight", text: `${Math.abs(hz).toFixed(1)} Hz high — loosen` };
   return { cls: "good", text: "In tune ✓" };
+}
+
+// A drum key that rotates through exactly the amount the user needs to turn
+// each lug — a turn fraction is much easier to copy from a moving picture
+// than from the text "3/16 turn". Loosen mirrors the sweep counter-clockwise.
+function drumKeyAnimHtml(turn) {
+  if (!turn || turn.turns === 0) return "";
+  const loosen = turn.direction === "loosen";
+  const deg = Math.round(turn.turns * 360) * (loosen ? -1 : 1);
+  const r = 46;
+  const circ = 2 * Math.PI * r;
+  const sweep = turn.turns * circ;
+  return `
+    <div class="key-anim ${loosen ? "loosen" : "tighten"}" style="--turn-deg:${deg}deg;">
+      <svg viewBox="0 0 120 120" class="key-anim-svg" aria-hidden="true">
+        <circle cx="60" cy="60" r="${r}" class="key-track" />
+        <circle cx="60" cy="60" r="${r}" class="key-sweep"
+          stroke-dasharray="${sweep.toFixed(1)} ${(circ - sweep).toFixed(1)}" />
+        <g class="key-rot">
+          <rect x="42" y="20" width="36" height="9" rx="3" class="key-part" />
+          <rect x="56.5" y="27" width="7" height="27" class="key-part" />
+          <rect x="50" y="50" width="20" height="20" rx="3" class="key-part" />
+          <circle cx="60" cy="60" r="4.5" class="key-socket" />
+        </g>
+      </svg>
+      <div class="key-anim-label">${turn.label}<span>${turn.direction} · every lug</span></div>
+    </div>`;
 }
 
 // Collapsible guidance — the method depends on doing these consistently.
@@ -73,7 +100,7 @@ export function tuningTipsHtml() {
     <details class="tips-card">
       <summary>📱 How to get consistent readings</summary>
       <ul>
-        <li>Start with every lug finger tight and even — snug by hand, no key yet. That's the baseline the whole method builds on.</li>
+        <li>Start from an even baseline: every lug finger tight by hand, then one full turn with the key on each, in the numbered star order.</li>
         <li>Hold the phone 6–12 inches above the middle of the head.</li>
         <li>Strike the <b>center</b> of the head once, firmly, then let it ring. Center hits give the drum's true fundamental; hits near the rim ring at a second, higher pitch that can confuse any tuner.</li>
         <li>Turn <b>every</b> lug by the same amount each round, following the numbers on the diagram (the star pattern) — that's what keeps the head even.</li>
@@ -160,16 +187,19 @@ export function wireKitNav(view, params) {
 const PROGRESS_RANGE_HZ = 60;
 
 // Mic-driven tuning, round based:
-//   prep    — hand-tighten every lug evenly, then start
+//   prep    — even baseline: finger tight by hand, then one full key turn
+//             on every lug in the star order. Shown once and never again.
 //   tuning  — strike the CENTER; app reports how far off and how much to
-//             turn EVERY lug (same amount, in the numbered star order);
-//             repeat until the pitch lands inside the ±IN_TUNE_HZ window
-//   done    — in tune
+//             turn EVERY lug (same amount, in the numbered star order),
+//             with a drum key animating that exact fraction; repeat until
+//             the pitch lands inside the current tolerance window
+//   done    — inside tolerance; "Tune Further" halves the window (10 → 5 →
+//             2.5 Hz, then holds) and drops straight back into tuning
 // Turning all lugs equally from an even starting point keeps the head even
 // by construction, and every measurement comes from the same spot (center),
 // which is far more repeatable than chasing one lug at a time.
-// Shared by Tuning, Snare Tuning and Guided Tuning so all three behave the
-// same. Returns { stop } for callers that want to stop it early.
+// Shared by Tuning and Snare Tuning so both behave the same.
+// Returns { stop } for callers that want to stop it early.
 export function mountLiveTuning(container, { lugCount, target, fftSize, styleName, voice = false }) {
   const listener = new PitchListener();
   let phase = "prep"; // prep | tuning | done
@@ -178,13 +208,18 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
   let hitFailed = false;
   let micError = null;
   let round = 0;
+  let refineStep = 0; // 0 = ±10 Hz, 1 = ±5, 2+ = ±2.5
   let voiceOn = voice;
+
+  const tolerance = () => toleranceForStep(refineStep);
 
   function speak(text) {
     if (!voiceOn || !text || !("speechSynthesis" in window)) return;
     try {
       window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+      // Instruction text carries light markup for the card; strip it so the
+      // synthesizer doesn't read tag names aloud.
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g, "")));
     } catch (e) {
       /* speech synthesis unavailable in this browser */
     }
@@ -197,10 +232,10 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
 
   function instructionText() {
     if (phase === "prep") {
-      return "First, hand-tighten every lug until it's finger tight and even — snug by hand, no drum key yet. Then start tuning.";
+      return "Get an even starting point: hand-tighten every lug until it's finger tight, then give each one <b>one full turn</b> with the drum key, following the numbers on the diagram.";
     }
     if (phase === "done") {
-      return "In tune. Every lug got the same treatment, so the head should be even — strike the center once more if you want to confirm.";
+      return `In tune within ±${tolerance()} Hz. Every lug got the same treatment, so the head should be even. Tune further to tighten the window${refineStep >= 2 ? "" : ` to ±${toleranceForStep(refineStep + 1)} Hz`} and fine-tune from there.`;
     }
     if (hitFailed) return "Didn't catch that one — strike the center of the head again, firmly.";
     if (!lastHit) return "Strike the center of the head once, firmly, and let it ring.";
@@ -212,19 +247,23 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
   function accuracyPct() {
     if (!lastHit) return 0;
     const a = Math.abs(lastHit.hz);
-    if (a <= IN_TUNE_HZ) return 100;
-    return Math.max(0, Math.round(100 * (1 - (a - IN_TUNE_HZ) / PROGRESS_RANGE_HZ)));
+    const tol = tolerance();
+    if (a <= tol) return 100;
+    return Math.max(0, Math.round(100 * (1 - (a - tol) / PROGRESS_RANGE_HZ)));
   }
 
   function buttonLabel() {
-    if (phase === "prep") return "All lugs finger tight — Start";
-    if (phase === "done") return "Tune Again";
+    if (phase === "prep") return "Done — Start Tuning";
+    if (phase === "done") {
+      return refineStep >= 2 ? "Tune Further" : `Tune Further (±${toleranceForStep(refineStep + 1)} Hz)`;
+    }
     return listening ? "Stop Listening" : "Resume Listening";
   }
 
   function render() {
     const pct = accuracyPct();
-    const badge = tuneBadge(lastHit ? lastHit.hz : null);
+    const tol = tolerance();
+    const badge = tuneBadge(lastHit ? lastHit.hz : null, tol);
     const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, null);
     const turn = currentTurn();
     const showTurn = phase === "tuning" && turn && turn.turns > 0;
@@ -246,22 +285,25 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
         ${buildLugMapSvg(lugCount, { inTune: phase === "done" })}
         <div class="pitch-readout">
           <div class="current-freq">${displayFreq.toFixed(1)} Hz</div>
-          <div class="target-freq">Target: ${target.toFixed(1)} Hz${styleName ? ` · ${styleName}` : ""}</div>
+          <div class="target-freq">Target: ${target.toFixed(1)} Hz ±${tol}${styleName ? ` · ${styleName}` : ""}</div>
           <div class="cents-badge ${badge.cls}">${badge.text}</div>
         </div>
         <div class="lug-legend-note">Numbers = the order to turn the lugs. Turn them all by the same amount.</div>
       </div>
 
+      ${showTurn ? drumKeyAnimHtml(turn) : ""}
+
       <div class="tune-step card">
-        <div class="tune-step-title">${phase === "prep" ? "Before you start" : phase === "done" ? "Finished" : `Round ${round + 1}`}</div>
+        <div class="tune-step-title">${
+          phase === "prep" ? "Before you start" : phase === "done" ? "Finished" : `Round ${round + 1}`
+        }</div>
         <div class="tune-step-text">${instructionText()}</div>
-        ${showTurn ? `<div class="turn-callout">${turn.label} on <b>every</b> lug · ${turn.direction}</div>` : ""}
       </div>
 
       ${micError ? `<div class="mic-error">${micError}</div>` : ""}
 
       <div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn ${listening ? "btn-primary listening-pulse" : "btn-primary"}" id="tap-lug-btn">${buttonLabel()}</button>
+        <button class="btn btn-primary${listening ? " listening-pulse" : ""}" id="tap-lug-btn">${buttonLabel()}</button>
       </div>
     `;
     qs(container, "#tap-lug-btn").addEventListener("click", onMainButton);
@@ -278,7 +320,7 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
     const hz = hzOff(result.frequency, target);
     lastHit = { freq: result.frequency, hz };
     round++;
-    if (Math.abs(hz) <= IN_TUNE_HZ) {
+    if (Math.abs(hz) <= tolerance()) {
       phase = "done";
       stopListening();
     }
@@ -298,19 +340,17 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
   }
 
   async function onMainButton() {
-    if (phase === "done") {
-      // Tune Again: keep the target, reset the round state.
+    // From prep or done, the button starts a listening pass. Either way the
+    // prep card is behind us for good — it never reappears once tuning has
+    // begun, since re-reading "hand-tighten everything" mid-tune is wrong.
+    if (phase === "prep" || phase === "done") {
+      if (phase === "done") {
+        refineStep++; // Tune Further: halve the window (capped in tuningMath)
+        lastHit = null;
+        round = 0;
+      }
       phase = "tuning";
-      lastHit = null;
       hitFailed = false;
-      round = 0;
-      await startListening();
-      render();
-      speak(instructionText());
-      return;
-    }
-    if (phase === "prep") {
-      phase = "tuning";
       await startListening();
       render();
       speak(instructionText());

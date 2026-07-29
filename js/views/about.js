@@ -13,10 +13,11 @@ export function renderAbout() {
 
     <div class="section-title">How to Use</div>
     <ul class="about-list">
-      <li><b>1. Set up your drum.</b> Choose drum type, diameter, and lug count.</li>
-      <li><b>2. Tap a lug</b> near the drumhead and let the app listen.</li>
-      <li><b>3. Follow the guidance.</b> Green means in tune; tighten or loosen as shown.</li>
-      <li><b>4. Use Guided Mode</b> to work through lugs in the correct cross pattern.</li>
+      <li><b>1. Set up your drum.</b> Choose drum type, diameter, lug count, and the sound you want.</li>
+      <li><b>2. Even out the head.</b> Hand-tighten every lug finger tight, then give each one a full turn with the key, following the numbers on the diagram.</li>
+      <li><b>3. Strike the center</b> of the head and let the app listen.</li>
+      <li><b>4. Turn every lug the same amount</b> shown on screen, in the numbered star order — then strike again. Repeat until it reads in tune.</li>
+      <li><b>5. Tune further</b> to tighten the accuracy window and fine-tune from there.</li>
     </ul>
 
     <div class="section-title">Video Presentation</div>
