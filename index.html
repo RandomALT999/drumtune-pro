@@ -5,7 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
 <meta name="theme-color" content="#14151a" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<!-- MUST stay "black", not "black-translucent". With black-translucent + -->
+<!-- viewport-fit=cover, iOS draws the page under the status bar starting at -->
+<!-- y=0 but still sizes the viewport ~62px SHORTER than the screen — so the -->
+<!-- bottom ~62px is outside the page entirely and no CSS can paint it. That -->
+<!-- was the persistent dead strip under the nav. "black" makes iOS lay the -->
+<!-- web view out below the status bar and size it to the rest of the screen. -->
+<!-- iOS only reads this when the app is ADDED to the Home Screen: changing -->
+<!-- it does nothing until the icon is deleted and re-added. -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black" />
 <meta name="apple-mobile-web-app-title" content="DrumTune Pro" />
 <title>DrumTune Pro</title>
 <link rel="manifest" href="manifest.json" />

@@ -79,7 +79,13 @@ Why this replaced the old per-lug walk: a strike near the rim excites an overton
 
 **Session hygiene:** start a fresh conversation when switching between feature areas (e.g., UI → audio pipeline) rather than carrying one long thread. Keep this CLAUDE.md concise and update it as architecture decisions land, rather than letting context balloon.
 
-**SETTLED — iOS standalone viewport gap (do not re-attempt without new information):** in "Add to Home Screen" standalone mode, iOS reports a short viewport on launch and only corrects it after a *real user scroll*. Every programmatic fix failed on-device across many rounds: `100dvh`, JS `visualViewport` re-reads (on timers, resize, touch events), `position:fixed + inset:0` pinning, and forced `scrollTo` nudges — and scroll-locking the body made the gap *permanent* by removing the user-scroll trigger. Accepted behavior: brief gap on launch that settles on first scroll, visually blended by matching the body background to the nav's surface color.
+**SOLVED — iOS standalone dead strip under the nav.** Root cause was a meta tag, not CSS: `apple-mobile-web-app-status-bar-style: black-translucent` combined with `viewport-fit=cover` makes iOS draw the page from y=0 *under* the status bar while still sizing the viewport ~62px **shorter than the screen** — so the bottom ~62px is outside the page and no layout or paint can reach it. That's why every CSS/JS attempt failed (`100dvh`, `visualViewport` re-reads on timers/resize/touch, `position:fixed + inset:0`, forced `scrollTo` nudges) and why scroll-locking the body made it permanent. Fix: `content="black"`, which makes iOS lay the web view out below the status bar and size it to the rest of the screen. Keep `viewport-fit=cover` — the bottom inset is still needed to clear the home indicator.
+
+⚠️ **iOS reads that meta only at install time**: changing it does nothing until the Home Screen icon is deleted and re-added.
+
+Diagnostic that separates the two cases in one number — `barGap = innerHeight - bar.getBoundingClientRect().bottom`. If `barGap > 0` it's an ordinary CSS bug; if `barGap === 0` but `screen.height - innerHeight > 0`, the page already reaches its own bottom and the viewport itself is short (this bug). Full write-up, including a probe for reading `env()` values from JS: `C:\Users\limpe\OneDrive\Documents\60 Seconds App\IOS-NOTES.md`.
+
+Two related rules from those notes, also applied here: the canvas background propagates from `<html>`, not `<body>` (so `html` carries the nav's surface color as a backstop), and safe-area insets should be **scaled, not added whole** — `max(calc(env(safe-area-inset-bottom) * 0.6), 8px)` rather than adding the full ~34px to a fixed height.
 
 **GitHub Pages deploy quirk:** the build queue occasionally gets stuck ("building" for 10+ min, then errors). Re-trigger manually with `gh api -X POST repos/RandomALT999/drumtune-pro/pages/builds`.
 
