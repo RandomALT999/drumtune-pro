@@ -1,6 +1,5 @@
-import { el, qs } from "../util.js";
-import { playToneForDrumType } from "../audio/synth.js";
-import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning, tuningTipsHtml } from "./tuningShared.js";
+import { el, qs, headerHtml, wireHeader } from "../util.js";
+import { mountTuningEngine, pieceLabelFor } from "./tuningShared.js";
 
 export function renderTuning(params) {
   const lugCount = params.lugCount || 6;
@@ -9,21 +8,24 @@ export function renderTuning(params) {
   const fftSize = drumType === "floor-tom" || drumType === "bass-drum" ? 4096 : 2048;
 
   const view = el(`
-    ${kitBannerHtml(params)}
-    <div id="tuning-body"></div>
-    ${tuningTipsHtml()}
-    <div class="btn-row" style="margin-top:10px;">
-      <button class="btn btn-ghost" id="hear-target-btn">▶ Hear Target</button>
-    </div>
-    ${kitNavButtonHtml(params)}
+    ${headerHtml({ label: pieceLabelFor(params), state: "ready" })}
+    <div class="tune-body" id="tune-body"></div>
   `);
 
-  mountLiveTuning(qs(view, "#tuning-body"), { lugCount, target, fftSize, styleName: params.styleName });
+  wireHeader(view);
 
-  // Plays the target tone in place instead of navigating to Sound Preview —
-  // leaving the screen would throw away the tuning progress.
-  qs(view, "#hear-target-btn").addEventListener("click", () => playToneForDrumType(drumType, target));
-  wireKitNav(view, params);
+  const stateEl = qs(view, "#hdr-state");
+  mountTuningEngine(qs(view, "#tune-body"), {
+    lugCount,
+    target,
+    fftSize,
+    drumType,
+    params,
+    // The header carries the live round/tolerance readout.
+    onStateChange: (s) => {
+      if (stateEl) stateEl.textContent = s.everListened ? `round ${s.roundIndex + 1} · ±${s.tolerance} Hz` : "ready";
+    },
+  });
 
   return view;
 }

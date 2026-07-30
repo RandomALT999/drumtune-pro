@@ -43,3 +43,32 @@ export function upsertSavedKit(kit) {
   saveSavedKits(next);
   return next;
 }
+
+// In-progress kit session, so Home can offer "Continue · <next piece>".
+// Only tracks where you are in a kit — no audio state.
+const SESSION_KEY = "drumtune.session";
+
+export function loadSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+export function saveSession(kitId, index) {
+  try {
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ kitId, index, at: Date.now() }));
+  } catch (e) {
+    /* storage unavailable — the resume card just won't appear */
+  }
+}
+
+export function clearSession() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch (e) {
+    /* no-op */
+  }
+}

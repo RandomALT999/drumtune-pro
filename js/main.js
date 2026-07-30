@@ -3,42 +3,38 @@ import { renderDrumSetup } from "./views/drumSetup.js";
 import { renderTuning } from "./views/tuning.js";
 import { renderSnareTuning } from "./views/snareTuning.js";
 import { renderSoundPreview } from "./views/soundPreview.js";
-import { renderPresets } from "./views/presets.js";
 import { renderPresetDetail } from "./views/presetDetail.js";
 import { renderKitBuilder } from "./views/kitBuilder.js";
 import { renderKitComplete } from "./views/kitComplete.js";
 import { renderKits } from "./views/kits.js";
 import { renderAdvanced } from "./views/advanced.js";
-import { renderAbout } from "./views/about.js";
+import { renderMore } from "./views/more.js";
 import { installAudioUnlock } from "./audio/unlockAudio.js";
 
 installAudioUnlock();
 
-const TOP_LEVEL_ROUTES = new Set(["home", "presets", "kits", "advanced"]);
+// The tab bar shows only on these four. Tuning and Setup are focus modes —
+// hiding the bar is what buys the vertical room for the 72px readout; you
+// leave them via the back chevron in the view's own header.
+const TAB_ROUTES = new Set(["home", "kits", "presets", "advanced", "more"]);
 
 const routes = {
-  home: { title: "DrumTune Pro", render: renderHome },
-  "drum-setup": { title: "Drum Setup", render: renderDrumSetup },
-  tuning: { title: "Tuning", render: renderTuning },
-  "snare-tuning": { title: "Snare Tuning", render: renderSnareTuning },
-  "sound-preview": { title: "Sound Preview", render: renderSoundPreview },
-  presets: { title: "Tuning Presets", render: renderPresets },
-  "preset-detail": { title: "Kit Preview", render: renderPresetDetail },
-  "kit-builder": {
-    title: "Build Kit",
-    render: renderKitBuilder,
-    dynamicTitle: (p) => (p.mode === "edit" ? "Edit Kit" : "Tune All Drums"),
-  },
-  "kit-complete": { title: "Kit Complete", render: renderKitComplete },
-  kits: { title: "Saved Kits", render: renderKits },
-  advanced: { title: "Frequency Analysis", render: renderAdvanced },
-  about: { title: "About", render: renderAbout },
+  home: renderHome,
+  "drum-setup": renderDrumSetup,
+  tuning: renderTuning,
+  "snare-tuning": renderSnareTuning,
+  "sound-preview": renderSoundPreview,
+  // The old Presets tab is absorbed by Kits; keep the hash working.
+  presets: renderKits,
+  "preset-detail": renderPresetDetail,
+  "kit-builder": renderKitBuilder,
+  "kit-complete": renderKitComplete,
+  kits: renderKits,
+  advanced: renderAdvanced,
+  more: renderMore,
 };
 
 const viewRoot = document.getElementById("view-root");
-const appTitle = document.getElementById("app-title");
-const backBtn = document.getElementById("back-btn");
-const aboutBtn = document.getElementById("about-btn");
 const bottomNav = document.getElementById("bottom-nav");
 
 export function navigate(routeId, params = {}, opts = {}) {
@@ -52,9 +48,9 @@ export function goBack() {
   window.history.back();
 }
 
-// Screens that start a mic listener or a speech/animation loop register a
-// teardown here so switching routes always releases the mic instead of
-// leaving it running in the background.
+// Screens that start a mic listener or an animation loop register a teardown
+// here so switching routes always releases the mic instead of leaving it
+// running in the background.
 let activeCleanup = null;
 export function registerCleanup(fn) {
   activeCleanup = fn;
@@ -75,23 +71,22 @@ function render(routeId, params) {
     activeCleanup = null;
   }
 
-  const entry = routes[routeId] || routes.home;
-  appTitle.textContent = entry.dynamicTitle ? entry.dynamicTitle(params) : entry.title;
-  backBtn.hidden = TOP_LEVEL_ROUTES.has(routeId);
-  bottomNav.style.display = TOP_LEVEL_ROUTES.has(routeId) ? "flex" : "none";
+  const view = routes[routeId] || routes.home;
+  const isTab = TAB_ROUTES.has(routeId);
+  bottomNav.style.display = isTab ? "flex" : "none";
 
   viewRoot.innerHTML = "";
-  const el = entry.render(params);
+  const el = view(params);
   if (el) viewRoot.appendChild(el);
   viewRoot.scrollTop = 0;
 
   document.querySelectorAll(".nav-btn").forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.route === routeId);
+    // #presets is an alias for Kits, so light the Kits tab for it too.
+    const active = btn.dataset.route === routeId || (btn.dataset.route === "kits" && routeId === "presets");
+    btn.classList.toggle("active", active);
   });
 }
 
-backBtn.addEventListener("click", goBack);
-aboutBtn.addEventListener("click", () => navigate("about"));
 bottomNav.addEventListener("click", (e) => {
   const btn = e.target.closest(".nav-btn");
   if (!btn) return;

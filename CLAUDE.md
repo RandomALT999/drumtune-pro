@@ -24,29 +24,90 @@ A mobile app that helps drummers tune toms and snares by listening to individual
 
 The user taps each lug on a drumhead while holding their phone nearby. The app detects the pitch of each lug via the microphone, compares it to a target tuning frequency, and shows which lugs need tightening or loosening — like a guitar tuner, but for drums, with a visual lug map.
 
-### Main Screens
-- **Home** — cards for Tune Rack Tom / Tune Floor Tom / Tune Snare / Custom Tuning / **Tune All Drums** / Saved Drum Kits.
-- **Drum Setup** — select drum type, diameter, number of lugs (illustrated diagrams), then a **Sound Style vs. Custom Hz** toggle (applies to any drum type, not just "Custom Tuning" — that used to be its own pseudo drum-type with no size, which didn't make sense; now it's just this toggle defaulted to manual entry). Custom Hz mode has its own ▶ Preview button so you can hear the exact entered frequency before committing.
-- **Tuning Screen** (primary) — uses the **round-based, all-lugs-at-once method** (see Tuning Method below). Circular top-down drum graphic with every lug shown in the same state and **numbered by its step in the star order** (the numbers themselves tell you the turning order), a strike target at the **center** of the head, live pitch reading, target pitch, and a progress ring based on how close the pitch is to target.
-- **Smart Adjustment Estimation** — estimates turn amount in sixteenths (1/16, 1/8, 3/16…) from the pitch delta, applied to *every* lug equally, and animates a drum key through that exact fraction.
-- **Sound Preview** — style presets (Warm, Balanced, Punchy, Resonant, Jazz, Rock, Metal); target Hz shown/previewed is size- and drum-type-aware when reached with that context (via `targetFrequencyFor`), not a flat number.
-- **Snare Tuning** — its own dedicated tuning screen (not a generic tom screen) with the wire-balance check (buzz/choke/looseness, batter-vs-resonant ratio) shown inline alongside the lug map, since snare tuning always needs that context.
-- **Tune All Drums / Kit Builder** — add/remove screen for assembling a kit from scratch: add any number of rack/floor toms (each with its own size + lug count), toggle a snare and/or bass drum on or off, then pick **one** Sound Style that's applied across every piece (each piece's actual Hz still comes out size-appropriate via `targetFrequencyFor`, not literally identical). Flows straight into tuning every piece in sequence, same as a genre preset, ending on the same kit-complete "save to your kits?" screen.
-- **Tuning Presets** — built-in genre kits (Rock, Jazz, Metal, Fusion, Funk, Gospel), each with one `styleId` shared across its pieces; per-piece target frequencies are derived from size + that style (see `targetFrequencyFor`) so the kit descends from high rack toms down to the floor tom for a uniform, related sound — not tuned independently. Tapping a kit opens a preset-detail screen to preview each piece's sound first, an **Edit Kit** button (opens the same Kit Builder add/remove screen, pre-populated — editing forks a new custom kit rather than mutating the built-in preset), and "Start Tuning Kit" which flows straight into tuning each piece in sequence, ending on a kit-complete summary.
-- **Advanced Frequency Analysis** (pro mode) — FFT spectrum + overtone table, both empty until you start listening and frozen on the last reading when you stop, with a "?" explaining how to read the overtone series. (The old "Lug Consistency" panel was removed — the current method never measures lugs individually, so it could never populate.)
-- **Progress Indicator** — "% to target" ring driven by how close the measured pitch is to the target Hz.
+### UI layer — follows the design handoff (do not regress)
 
-**Removed by request (do not rebuild without asking):** Camera-Assisted Mode and Guided Tuning Mode. Camera mode was a working alignment-guide overlay and Guided mode was the same round flow with voice prompts; both were cut as unnecessary once the center-strike method made tuning simple enough that neither earned its screen. `mountLiveTuning` still exposes `setVoice`/`speakCurrent` (unused) if voice is ever wanted again.
+The whole presentation layer was replaced from a Claude Design project
+(`DrumTune Pro.dc.html` + `HANDOFF.md`, project `a2389cdd-0fbe-4af2-8d5f-b5f8995fd32d`,
+readable via the `DesignSync` MCP). **Future sessions must not reintroduce the emoji
+list rows (🥁 🎯 ⚙️ …), the centred-title header bar, or `--surface-3`** — all three
+were deliberately deleted. Rules of thumb from the handoff:
+
+- Hairline dividers for lists; cards only for meters and diagrams.
+- Every view owns its own 54px header row (back chevron + uppercase context label
+  left, live state or one text action right). There is no global header any more.
+- Font is **Space Grotesk**, self-hosted in `assets/fonts/` (a CDN link would break
+  the offline PWA). Tokens and the type scale live at the top of `css/styles.css`.
+- Primary actions are 58px full-width pills; controls are ≥42px tall (the app is
+  used one-handed with a stick in the other).
+- Nav is **Tune · Kits · Analyze · More**. Tuning and Setup hide the tab bar — they
+  are focus modes, and that's what buys room for the 72px readout.
+- Everything ships **empty**: em-dashes and empty states are the shipping default,
+  never mock data.
+
+### Main Screens
+- **Home (Tune tab)** — two-line greeting, a **resume card** when a kit session
+  exists (progress strip + `Continue · <next piece>`, else `NOTHING IN PROGRESS`),
+  a hairline `One drum` list (Rack tom / Floor tom / Snare / Bass drum / Custom),
+  then genre chips + a dashed `+ Build`.
+- **Drum Setup** — `step 1 of 2`. Four labelled rows separated by hairlines: Drum
+  (row → Home's list is the picker), Diameter, Lugs, Sound (row → the style picker).
+  A label turns accent while its group is the last one touched. Footer shows the
+  live `TARGET <n> Hz` in `--head` — recomputed on every change, since that's the
+  whole point of the screen — plus a 52px preview-tone circle and `Start listening`.
+  Custom Hz replaces the Sound row in place, keeping the A440/A442 chips.
+- **Tuning Screen** (primary) — uses the **round-based, all-lugs-at-once method**
+  (see Tuning Method below). Top to bottom: 72px `Heard` readout (ghosted at 50%
+  before the first measurement, yellow out of tolerance, green in), target/delta
+  strip, **needle ladder** whose green band width *is* the tolerance (25% / 12.5% /
+  6.25%), **turn block** (yellow fill + rotating drum key out of tolerance; green
+  tint + check in), diagram + turn-order cards, instruction line, button row.
+- **Smart Adjustment Estimation** — turn amount in sixteenths, applied to *every*
+  lug equally, animated on a drum key through that exact fraction.
+- **Sound Preview** — the style picker reached from Setup's Sound row (and Kit
+  Builder's `Sound · whole kit`); target Hz is size- and drum-type-aware via
+  `targetFrequencyFor`.
+- **Snare Tuning** — the same tuning engine plus the wire cards it always needs in
+  view. The wire card keeps its `ILLUSTRATIVE` pill: it is a labelled mock.
+- **Kits tab** — absorbs the old Presets tab. `Yours` (saved kits) then
+  `Start from a genre` (the 6 presets).
+- **Kit detail / Kit Builder / Complete** — detail has per-piece status glyphs,
+  preview circles and a pitch-spread card; the builder's footer is **disabled
+  styling** while the kit is empty; complete lists final pitches in green.
+- **Analyze** — 16-bar spectrum + overtone rows. Empty until you start listening;
+  pausing freezes the last numbers rather than clearing them.
+- **More** — new tab. About copy, `How to use it` as 5 numbered rows, reference
+  pitch, walkthrough placeholder, and the Maine App Challenge AI disclosure (which
+  is why the ⓘ button is off every other screen).
+
+**Removed by request (do not rebuild without asking):** Camera-Assisted Mode and
+Guided Tuning Mode.
 
 ### Tuning Method (the core interaction — changed after real-device use)
 
-Every tuning screen runs the same loop, in `mountLiveTuning` (`js/views/tuningShared.js`):
+Every tuning screen mounts the same engine, `mountTuningEngine`
+(`js/views/tuningShared.js`). One primary button drives the whole loop; the
+secondary beside it changes role and finally collapses:
 
-1. **Prep** — hand-tighten every lug finger tight, then **one full turn with the key on each** in the star order. This is the even baseline the rest depends on. Shown once; it disappears the moment listening starts and never returns (re-reading "hand-tighten everything" mid-tune would be wrong).
+| state | primary | fill | secondary |
+|---|---|---|---|
+| idle, never listened | `Start listening` | accent | ▶ preview tone |
+| listening, out of tolerance | `Listening — strike again` + pulsing dot | accent | ▶ preview tone |
+| in tolerance, round 1 | `Tune further · ±5 Hz` | white | `Skip →` |
+| in tolerance, round 2 | `Tune further · ±2.5 Hz` | white | `Skip →` |
+| in tolerance, round 3 (final) | `Next drum` / `Finish` | **green** | *(collapses to 0 width)* |
+
+1. **Prep** — hand-tighten every lug finger tight, then **one full turn with the key on each** in the star order. This is the even baseline the rest depends on. It's the idle-state instruction line, so it's the first thing you read and it disappears for good after the first measurement (re-reading "hand-tighten everything" mid-tune would be wrong).
 2. **Strike the CENTER** of the head — not near a lug. One measurement per strike.
 3. The app reports how far off the pitch is and **how much to turn EVERY lug by the same amount**, in the numbered star order shown on the diagram — with a **drum key animation** rotating through exactly that fraction (easier to copy than reading "3/16 turn").
 4. Repeat until the pitch lands inside the current tolerance window.
-5. **Tune Further** halves the window and drops back into tuning: ±10 → ±5 → ±2.5 Hz, then holds at ±2.5 (chasing tighter than that by hand isn't realistic — the drum drifts more than that as it settles). `toleranceForStep` in `tuningMath.js`.
+5. **Tune further** halves the window without closing the mic: ±10 → ±5 → ±2.5 Hz, then holds at ±2.5 (chasing tighter than that by hand isn't realistic — the drum drifts more than that as it settles). `TOLERANCES` in `tuningShared.js`. The green band on the needle ladder narrows in the same 550ms transition — that narrowing *is* the feedback that the goal got stricter.
+
+**Lug numbering.** Lugs are drawn at their physical positions but labelled with
+their *place in the tuning order*, so the drummer just counts 1, 2, 3. Computed
+from `generateCrossOrder(n)`: for position `p`, `label = order.indexOf(p) + 1`.
+6 lugs clockwise from top reads **1·3·5·2·4·6**; 8 reads **1·3·5·7·2·4·6·8**.
+Never print the order as a separate "1 → 4 → 2 → 5" string — that was the
+confusing bit.
 
 Why this replaced the old per-lug walk: a strike near the rim excites an overtone louder than the fundamental, so per-lug readings flipped between two pitches ~60 Hz apart depending on exactly where the stick landed (reported on-device for snare and floor tom, and the user found center hits were the only reliable spot). Center strikes excite the fundamental cleanly, so every measurement comes from the same repeatable place; turning all lugs equally from an even start keeps the head even by construction instead of chasing one lug at a time. There is no "active lug" any more — all lugs share one state in the UI.
 

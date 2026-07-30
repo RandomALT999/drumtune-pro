@@ -1,61 +1,80 @@
-import { el, qs } from "../util.js";
-import { playToneForDrumType } from "../audio/synth.js";
-import { kitBannerHtml, kitNavButtonHtml, wireKitNav, mountLiveTuning, tuningTipsHtml } from "./tuningShared.js";
+import { el, qs, headerHtml, wireHeader } from "../util.js";
+import { mountTuningEngine, pieceLabelFor, hasNextPiece, goToNextPiece } from "./tuningShared.js";
 
+// Snare gets the same tuning engine, plus the wire cards it always needs in
+// view. The wire card is a LABELLED MOCK — real buzz/choke detection needs
+// dissonance analysis across both heads at once, which isn't built.
 export function renderSnareTuning(params) {
   const lugCount = params.lugCount || 8;
   const target = params.target || 200;
 
-  const view = el(`
-    ${kitBannerHtml(params)}
-    <div id="tuning-body"></div>
-    ${tuningTipsHtml()}
+  const view = el(
+    `
+    ${headerHtml({ label: "snare · wires", state: "ready" })}
+    <div class="tune-body" id="tune-body" style="overflow:visible;padding-bottom:0"></div>
 
-    <div class="section-title" style="margin-top:20px;">Wire Balance <span class="badge-soon">Mock diagnostic</span></div>
-    <div class="card">
-      <div class="meter-row">
-        <div class="meter-row-label"><span>Buzz</span><span>Low</span></div>
-        <div class="meter"><div class="meter-fill" style="width:22%; background:var(--green);"></div></div>
+    <div style="flex:none;padding:0 var(--pad-x)">
+      <div class="card" style="margin-top:14px">
+        <div class="card-title-row">
+          <span class="eyebrow">Wire balance</span>
+          <span class="tag-pill">Illustrative</span>
+        </div>
+        <div style="margin-top:6px">
+          <div class="meter-row">
+            <span class="meter-label">Buzz</span>
+            <span class="meter-track"><span class="meter-fill bar-rise" style="width:22%;background:var(--green)"></span></span>
+            <span class="meter-verdict" style="color:var(--green)">Low</span>
+          </div>
+          <div class="meter-row">
+            <span class="meter-label">Choke</span>
+            <span class="meter-track"><span class="meter-fill bar-rise" style="width:54%;background:var(--yellow);animation-delay:60ms"></span></span>
+            <span class="meter-verdict" style="color:var(--yellow)">Moderate</span>
+          </div>
+          <div class="meter-row">
+            <span class="meter-label">Looseness</span>
+            <span class="meter-track"><span class="meter-fill bar-rise" style="width:78%;background:var(--red);animation-delay:120ms"></span></span>
+            <span class="meter-verdict" style="color:var(--red)">High</span>
+          </div>
+        </div>
+        <div class="blurb" style="margin-top:8px;font-size:12.5px">Shown to explain what to listen for. These aren't measured — real wire analysis needs both heads at once.</div>
       </div>
-      <div class="meter-row">
-        <div class="meter-row-label"><span>Choke</span><span>Moderate</span></div>
-        <div class="meter"><div class="meter-fill" style="width:54%; background:var(--yellow);"></div></div>
-      </div>
-      <div class="meter-row" style="margin-bottom:0;">
-        <div class="meter-row-label"><span>Looseness</span><span>High</span></div>
-        <div class="meter"><div class="meter-fill" style="width:78%; background:var(--red);"></div></div>
-      </div>
-      <div style="font-size:12px; color:var(--text-dim); margin-top:10px;">
-        Real buzz/choke detection needs dissonance analysis across both heads at once —
-        a harder DSP problem than single-lug pitch tracking, so this stays illustrative for now.
+
+      <div class="card" style="margin-top:12px">
+        <div class="eyebrow">Batter vs resonant</div>
+        <div style="font:700 30px 'Space Grotesk',sans-serif;letter-spacing:-.03em;margin-top:8px">1 : 1.66</div>
+        <div style="display:flex;flex-direction:column;gap:7px;margin-top:12px">
+          <span class="meter-track"><span class="meter-fill bar-rise" style="width:60%;background:var(--blue)"></span></span>
+          <span class="meter-track"><span class="meter-fill bar-rise" style="width:100%;background:var(--blue);animation-delay:60ms"></span></span>
+        </div>
+        <div class="meta" style="margin-top:9px">typical range 1 : 1.4 – 1.8</div>
       </div>
     </div>
 
-    <div class="section-title">Batter vs. Resonant</div>
-    <div class="card">
-      <div class="preset-freqs" style="margin-bottom:10px;">
-        <span>Batter <b>${target.toFixed(0)} Hz</b></span>
-        <span>Resonant <b>${(target * 1.66).toFixed(0)} Hz</b></span>
-      </div>
-      <div class="meter-row-label"><span>Ratio</span><span>1 : 1.66</span></div>
-      <div class="meter"><div class="meter-fill" style="width:66%; background:var(--accent-2);"></div></div>
-      <div style="font-size:12px; color:var(--text-dim); margin-top:8px;">
-        Typical snare ratio range is 1:1.4 – 1:1.8 for a balanced crack.
-      </div>
+    <div class="footer-actions" style="padding:16px var(--pad-x)">
+      <button class="pill green" id="finish-snare">${hasNextPiece(params) ? "Next drum" : "Finish snare"}</button>
     </div>
+  `,
+    { scrolls: true }
+  );
 
-    <div class="btn-row" style="margin-top:4px;">
-      <button class="btn btn-ghost" id="hear-target-btn">▶ Hear Target</button>
-    </div>
-    ${kitNavButtonHtml(params)}
-  `);
+  wireHeader(view);
 
-  mountLiveTuning(qs(view, "#tuning-body"), { lugCount, target, fftSize: 2048, styleName: params.styleName });
+  const stateEl = qs(view, "#hdr-state");
+  const engine = mountTuningEngine(qs(view, "#tune-body"), {
+    lugCount,
+    target,
+    fftSize: 2048,
+    drumType: "snare",
+    params,
+    onStateChange: (s) => {
+      if (stateEl) stateEl.textContent = s.everListened ? `round ${s.roundIndex + 1} · ±${s.tolerance} Hz` : "ready";
+    },
+  });
 
-  // Plays the target tone in place instead of navigating to Sound Preview —
-  // leaving the screen would throw away the tuning progress.
-  qs(view, "#hear-target-btn").addEventListener("click", () => playToneForDrumType("snare", target));
-  wireKitNav(view, params);
+  qs(view, "#finish-snare").addEventListener("click", () => {
+    engine.stop();
+    goToNextPiece(params);
+  });
 
   return view;
 }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
-<meta name="theme-color" content="#14151a" />
+<meta name="theme-color" content="#121317" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <!-- MUST stay "black", not "black-translucent". With black-translucent + -->
 <!-- viewport-fit=cover, iOS draws the page under the status bar starting at -->
@@ -18,38 +18,31 @@
 <title>DrumTune Pro</title>
 <link rel="manifest" href="manifest.json" />
 <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+<link rel="preload" href="assets/fonts/space-grotesk-latin.woff2" as="font" type="font/woff2" crossorigin />
 <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
   <div id="phone">
-    <header id="app-header">
-      <button id="back-btn" class="icon-btn" aria-label="Back" hidden>
-        <svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </button>
-      <h1 id="app-title">DrumTune Pro</h1>
-      <button id="about-btn" class="icon-btn" aria-label="About">
-        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="11" x2="12" y2="17" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="7.5" r="1.1" fill="currentColor"/></svg>
-      </button>
-    </header>
-
     <main id="view-root"></main>
 
+    <!-- Tune · Kits · Analyze · More. Hidden on focus screens (tuning, setup) -->
+    <!-- so the 72px readout has room; you leave those via the back chevron. -->
     <nav id="bottom-nav">
-      <button class="nav-btn" data-route="home" aria-label="Home">
-        <svg viewBox="0 0 24 24"><path d="M4 11.5 12 4l8 7.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 10v9h12v-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-        <span>Home</span>
+      <button class="nav-btn" data-route="home" aria-label="Tune">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M12 18v3"/><path d="M4.9 7.5A9 9 0 0 0 4.9 16.5"/><path d="M19.1 7.5a9 9 0 0 1 0 9"/></svg>
+        <span>Tune</span>
       </button>
-      <button class="nav-btn" data-route="presets" aria-label="Presets">
-        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="4" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="13" width="7" height="7" rx="1.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
-        <span>Presets</span>
-      </button>
-      <button class="nav-btn" data-route="kits" aria-label="Saved Kits">
-        <svg viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 7V5.5A2.5 2.5 0 0 1 10.5 3h3A2.5 2.5 0 0 1 16 5.5V7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      <button class="nav-btn" data-route="kits" aria-label="Kits">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         <span>Kits</span>
       </button>
-      <button class="nav-btn" data-route="advanced" aria-label="Analysis">
-        <svg viewBox="0 0 24 24"><path d="M4 19V9M10 19V4M16 19v-7M22 19v-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
-        <span>Analysis</span>
+      <button class="nav-btn" data-route="advanced" aria-label="Analyze">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M22 20v-11"/></svg>
+        <span>Analyze</span>
+      </button>
+      <button class="nav-btn" data-route="more" aria-label="More">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>
+        <span>More</span>
       </button>
     </nav>
   </div>

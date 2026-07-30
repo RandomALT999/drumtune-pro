@@ -1,316 +1,307 @@
-import { qs } from "../util.js";
+import { qs, escapeHtml, PLAY_ICON } from "../util.js";
 import { navigate, registerCleanup } from "../main.js";
 import { getKit, generateCrossOrder } from "../data.js";
 import { PitchListener, micErrorMessage } from "../audio/pitchListener.js";
-import { centsOff, hzOff, turnEstimate, IN_TUNE_HZ, toleranceForStep } from "../audio/tuningMath.js";
+import { centsOff, hzOff, turnEstimate } from "../audio/tuningMath.js";
+import { playToneForDrumType } from "../audio/synth.js";
+import { saveSession, clearSession } from "../storage.js";
 
-// Maps each lug id -> its step number in the cross/star tightening order.
-// The diagram labels lugs by STEP, not by physical id, so the numbers
-// themselves tell you what order to turn them in.
-function starSteps(lugCount) {
-  const steps = new Map();
-  generateCrossOrder(lugCount).forEach((lugId, i) => steps.set(lugId, i + 1));
-  return steps;
+// Tolerance ladder. Each pass halves the window; the green band on the
+// needle ladder narrows to match, which is the feedback that the goal got
+// stricter. Stops at 2.5 Hz — tighter than that isn't reachable by hand,
+// the drum drifts more than that as it settles.
+export const TOLERANCES = [10, 5, 2.5];
+
+// Lugs are drawn at their physical positions but labelled with their PLACE
+// IN THE TUNING ORDER, so the drummer just counts 1, 2, 3 around the head.
+// For 6 lugs clockwise from top that reads 1·3·5·2·4·6.
+export function lugOrderLabels(lugCount) {
+  const order = generateCrossOrder(lugCount);
+  return Array.from({ length: lugCount }, (_, position) => order.indexOf(position + 1) + 1);
 }
 
-// All lugs are shown in the same state because the method turns them all by
-// the same amount every round — there's no single "active" lug any more.
-// The strike target sits at the CENTER of the head: a center hit excites the
-// fundamental cleanly, where an edge hit near a lug excites an overtone
-// louder than the fundamental and makes readings flip.
-export function buildLugMapSvg(lugCount, { inTune = false } = {}) {
-  const cx = 130,
-    cy = 130,
-    shellR = 108,
-    dotR = 15;
-  const steps = starSteps(lugCount);
-
-  let dots = "";
+export function lugMapSvg(lugCount, size = 144) {
+  const cx = 56, cy = 56, ringR = 44, lugR = lugCount > 6 ? 7 : 7.5;
+  const labels = lugOrderLabels(lugCount);
+  let discs = "";
+  let numerals = "";
   for (let i = 0; i < lugCount; i++) {
-    const angle = (i / lugCount) * 2 * Math.PI - Math.PI / 2;
-    const x = cx + shellR * Math.cos(angle);
-    const y = cy + shellR * Math.sin(angle);
-    dots += `
-      <g>
-        <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${dotR}" class="lug-dot ${inTune ? "in-tune" : "all-active"}" />
-        <text x="${x.toFixed(1)}" y="${(y + 4).toFixed(1)}" class="lug-label" fill="#0c0c0e">${steps.get(i + 1)}</text>
-      </g>`;
+    const a = (i / lugCount) * 2 * Math.PI - Math.PI / 2;
+    const x = (cx + ringR * Math.cos(a)).toFixed(1);
+    const y = (cy + ringR * Math.sin(a)).toFixed(1);
+    discs += `<circle cx="${x}" cy="${y}" r="${lugR}" />`;
+    numerals += `<text x="${x}" y="${(Number(y) + (lugCount > 6 ? 3.5 : 4)).toFixed(1)}">${labels[i]}</text>`;
   }
-
   return `
-    <svg class="lug-map" viewBox="0 0 260 260">
-      <circle cx="${cx}" cy="${cy}" r="${shellR + dotR + 6}" class="drum-shell" />
-      <circle cx="${cx}" cy="${cy}" r="${shellR - 10}" class="drum-head" />
-      <circle cx="${cx}" cy="${cy}" r="30" class="strike-ring" />
-      <circle cx="${cx}" cy="${cy}" r="5" class="strike-dot" />
-      <text x="${cx}" y="${cy + 50}" class="strike-label">strike center</text>
-      ${dots}
+    <svg width="${size}" height="${size}" viewBox="0 0 112 112" aria-hidden="true">
+      <circle cx="${cx}" cy="${cy}" r="${ringR}" fill="none" stroke="#2b2e37" stroke-width="1.5"/>
+      <circle cx="${cx}" cy="${cy}" r="35" fill="#d9c9a8" fill-opacity=".07"/>
+      <circle class="strike-ring" cx="${cx}" cy="${cy}" r="17" fill="none" stroke="#ff7a45" stroke-width="1.3" stroke-dasharray="3.5 6"/>
+      <g fill="#ff7a45">${discs}</g>
+      <g fill="#121317" font-family="Space Grotesk" font-size="${lugCount > 6 ? 10 : 11}" font-weight="700" text-anchor="middle">${numerals}</g>
     </svg>`;
 }
 
-export function accuracyRingSvg(pct) {
-  const r = 24;
-  const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - pct / 100);
-  return `
-    <svg class="accuracy-ring" viewBox="0 0 56 56">
-      <circle cx="28" cy="28" r="${r}" class="accuracy-ring-track" />
-      <circle cx="28" cy="28" r="${r}" class="accuracy-ring-fill"
-        stroke-dasharray="${circumference}" stroke-dashoffset="${offset}" />
-    </svg>`;
-}
+const KEY_GLYPH = `
+  <svg class="turn-glyph key" viewBox="0 0 48 48" aria-hidden="true">
+    <g stroke="currentColor" stroke-width="3.2" stroke-linecap="round" fill="none">
+      <path d="M24 15V7"/><rect x="18.5" y="15" width="11" height="11" rx="2.4" stroke-width="2.6"/>
+      <path d="M24 26v12"/><path d="M17.5 38h13"/>
+    </g>
+  </svg>`;
 
-export function tuneBadge(hz, tolerance = IN_TUNE_HZ) {
-  if (hz == null) return { cls: "good", text: "Not measured yet" };
-  if (hz > tolerance) return { cls: "loose", text: `${hz.toFixed(1)} Hz low — tighten` };
-  if (hz < -tolerance) return { cls: "tight", text: `${Math.abs(hz).toFixed(1)} Hz high — loosen` };
-  return { cls: "good", text: "In tune ✓" };
-}
+const CHECK_GLYPH = `
+  <svg class="turn-glyph check" viewBox="0 0 48 48" aria-hidden="true">
+    <circle cx="24" cy="24" r="19" fill="none" stroke="currentColor" stroke-width="2" stroke-opacity=".45"/>
+    <path d="M15 24.5l6.5 6.5L33 18" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
 
-// A drum key that rotates through exactly the amount the user needs to turn
-// each lug — a turn fraction is much easier to copy from a moving picture
-// than from the text "3/16 turn". Loosen mirrors the sweep counter-clockwise.
-function drumKeyAnimHtml(turn) {
-  if (!turn || turn.turns === 0) return "";
-  const loosen = turn.direction === "loosen";
-  const deg = Math.round(turn.turns * 360) * (loosen ? -1 : 1);
-  const r = 46;
-  const circ = 2 * Math.PI * r;
-  const sweep = turn.turns * circ;
-  return `
-    <div class="key-anim ${loosen ? "loosen" : "tighten"}" style="--turn-deg:${deg}deg;">
-      <svg viewBox="0 0 120 120" class="key-anim-svg" aria-hidden="true">
-        <circle cx="60" cy="60" r="${r}" class="key-track" />
-        <circle cx="60" cy="60" r="${r}" class="key-sweep"
-          stroke-dasharray="${sweep.toFixed(1)} ${(circ - sweep).toFixed(1)}" />
-        <g class="key-rot">
-          <rect x="42" y="20" width="36" height="9" rx="3" class="key-part" />
-          <rect x="56.5" y="27" width="7" height="27" class="key-part" />
-          <rect x="50" y="50" width="20" height="20" rx="3" class="key-part" />
-          <circle cx="60" cy="60" r="4.5" class="key-socket" />
-        </g>
-      </svg>
-      <div class="key-anim-label">${turn.label}<span>${turn.direction} · every lug</span></div>
-    </div>`;
-}
+const SKIP_ICON = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8f939f" stroke-width="2.6" stroke-linecap="round"><path d="M6 5l7 7-7 7"/><path d="M15 5v14"/></svg>`;
 
-// Collapsible guidance — the method depends on doing these consistently.
-export function tuningTipsHtml() {
-  return `
-    <details class="tips-card">
-      <summary>📱 How to get consistent readings</summary>
-      <ul>
-        <li>Start from an even baseline: every lug finger tight by hand, then one full turn with the key on each, in the numbered star order.</li>
-        <li>Hold the phone 6–12 inches above the middle of the head.</li>
-        <li>Strike the <b>center</b> of the head once, firmly, then let it ring. Center hits give the drum's true fundamental; hits near the rim ring at a second, higher pitch that can confuse any tuner.</li>
-        <li>Turn <b>every</b> lug by the same amount each round, following the numbers on the diagram (the star pattern) — that's what keeps the head even.</li>
-        <li>As you close in, make smaller moves — an eighth turn or less.</li>
-        <li>Tune somewhere quiet, and mute the drum's other head (rest it on carpet or your leg) so only the head you're tuning rings.</li>
-      </ul>
-    </details>`;
-}
+// Kit-flow helpers ---------------------------------------------------------
 
-export function currentFreqFor(target, hz) {
-  const base = target || 122;
-  if (hz == null) return base;
-  return base - hz; // hz = target - freq
-}
-
-// Kit-flow helpers: when tuning is reached as part of a genre-kit sequence
-// (params.kitId + params.kitIndex), show progress and a way to move to the
-// next piece so the whole kit is tuned in one coherent pass.
-export function kitBannerHtml(params) {
-  if (!params.kitId) return "";
+export function kitPieceAt(params) {
+  if (!params.kitId) return null;
   const kit = getKit(params.kitId);
-  if (!kit) return "";
-  const piece = kit.pieces[params.kitIndex] || kit.pieces[0];
-  return `
-    <div class="card" style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-      <div>
-        <div style="font-weight:700; font-size:14px;">🎼 ${kit.name}</div>
-        <div style="font-size:12px; color:var(--text-dim); margin-top:2px;">
-          Piece ${params.kitIndex + 1} of ${kit.pieces.length} · ${piece.label}
-        </div>
-      </div>
-    </div>`;
+  if (!kit) return null;
+  return { kit, piece: kit.pieces[params.kitIndex] || kit.pieces[0] };
 }
 
-// Starts (or resumes) a kit-tuning sequence at its first piece. Used by both
-// Preset Detail ("Start Tuning Kit") and Kit Builder (after assembling a
-// fresh or edited kit), so the sequence always begins the same way.
+export function hasNextPiece(params) {
+  const ctx = kitPieceAt(params);
+  return !!ctx && params.kitIndex < ctx.kit.pieces.length - 1;
+}
+
+export function goToNextPiece(params) {
+  const ctx = kitPieceAt(params);
+  if (!ctx || !hasNextPiece(params)) {
+    // The kit is finished, so there's nothing left to resume.
+    clearSession();
+    navigate("kit-complete", { kitId: params.kitId });
+    return;
+  }
+  const nextIndex = params.kitIndex + 1;
+  saveSession(params.kitId, nextIndex);
+  const next = ctx.kit.pieces[nextIndex];
+  const nextParams = {
+    kitId: params.kitId,
+    kitIndex: nextIndex,
+    drumType: next.drumType,
+    size: next.size,
+    lugCount: next.lugCount,
+    target: next.target,
+  };
+  navigate(next.drumType === "snare" ? "snare-tuning" : "tuning", nextParams);
+}
+
 export function beginKitTuning(kit) {
   const first = kit.pieces[0];
-  const params = {
+  saveSession(kit.id, 0);
+  navigate(first.drumType === "snare" ? "snare-tuning" : "tuning", {
     kitId: kit.id,
     kitIndex: 0,
     drumType: first.drumType,
+    size: first.size,
     lugCount: first.lugCount,
     target: first.target,
-  };
-  navigate(first.drumType === "snare" ? "snare-tuning" : "tuning", params);
-}
-
-export function kitNavButtonHtml(params) {
-  if (!params.kitId) return "";
-  const kit = getKit(params.kitId);
-  if (!kit) return "";
-  const isLast = params.kitIndex >= kit.pieces.length - 1;
-  const label = isLast ? "Finish Kit ✓" : `Next: ${kit.pieces[params.kitIndex + 1].label} ▸`;
-  return `<button class="btn btn-primary" id="kit-next-btn" style="margin-top:10px;">${label}</button>`;
-}
-
-export function wireKitNav(view, params) {
-  const btn = qs(view, "#kit-next-btn");
-  if (!btn || !params.kitId) return;
-  const kit = getKit(params.kitId);
-  if (!kit) return;
-  btn.addEventListener("click", () => {
-    const isLast = params.kitIndex >= kit.pieces.length - 1;
-    if (isLast) {
-      navigate("kit-complete", { kitId: params.kitId });
-      return;
-    }
-    const nextIndex = params.kitIndex + 1;
-    const nextPiece = kit.pieces[nextIndex];
-    const nextParams = {
-      kitId: params.kitId,
-      kitIndex: nextIndex,
-      drumType: nextPiece.drumType,
-      lugCount: nextPiece.lugCount,
-      target: nextPiece.target,
-    };
-    navigate(nextPiece.drumType === "snare" ? "snare-tuning" : "tuning", nextParams);
   });
 }
 
-// How far off "0% progress" sits, in Hz beyond the in-tune window.
-const PROGRESS_RANGE_HZ = 60;
+export function pieceLabelFor(params) {
+  const ctx = kitPieceAt(params);
+  if (ctx) return ctx.piece.label.toLowerCase();
+  const type = (params.drumType || "rack-tom").replace("-", " ");
+  return params.size ? `${params.size}" ${type}` : type;
+}
 
-// Mic-driven tuning, round based:
-//   prep    — even baseline: finger tight by hand, then one full key turn
-//             on every lug in the star order. Shown once and never again.
-//   tuning  — strike the CENTER; app reports how far off and how much to
-//             turn EVERY lug (same amount, in the numbered star order),
-//             with a drum key animating that exact fraction; repeat until
-//             the pitch lands inside the current tolerance window
-//   done    — inside tolerance; "Tune Further" halves the window (10 → 5 →
-//             2.5 Hz, then holds) and drops straight back into tuning
-// Turning all lugs equally from an even starting point keeps the head even
-// by construction, and every measurement comes from the same spot (center),
-// which is far more repeatable than chasing one lug at a time.
-// Shared by Tuning and Snare Tuning so both behave the same.
-// Returns { stop } for callers that want to stop it early.
-export function mountLiveTuning(container, { lugCount, target, fftSize, styleName, voice = false }) {
+// The tuning engine --------------------------------------------------------
+//
+// Mounts the readout, needle ladder, turn block, diagram and button row into
+// `container`. One primary button drives the whole loop (see the handoff's
+// state table); the secondary is the preview tone until round 1 passes, then
+// becomes Skip, then collapses to zero width on the final round — that
+// widening IS the completion signal.
+export function mountTuningEngine(container, opts) {
+  const { lugCount, target, fftSize, drumType, params = {}, onStateChange, hideDiagram = false } = opts;
+
   const listener = new PitchListener();
-  let phase = "prep"; // prep | tuning | done
+  let roundIndex = 0; // index into TOLERANCES
   let listening = false;
+  let everListened = false;
   let lastHit = null; // { freq, hz }
+  let inTolerance = false;
   let hitFailed = false;
   let micError = null;
-  let round = 0;
-  let refineStep = 0; // 0 = ±10 Hz, 1 = ±5, 2+ = ±2.5
-  let voiceOn = voice;
 
-  const tolerance = () => toleranceForStep(refineStep);
+  const tolerance = () => TOLERANCES[roundIndex];
+  const isFinalRound = () => roundIndex >= TOLERANCES.length - 1;
 
-  function speak(text) {
-    if (!voiceOn || !text || !("speechSynthesis" in window)) return;
-    try {
-      window.speechSynthesis.cancel();
-      // Instruction text carries light markup for the card; strip it so the
-      // synthesizer doesn't read tag names aloud.
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(text.replace(/<[^>]*>/g, "")));
-    } catch (e) {
-      /* speech synthesis unavailable in this browser */
-    }
+  function state() {
+    return { roundIndex, tolerance: tolerance(), listening, everListened, inTolerance, lastHit };
   }
 
-  function currentTurn() {
+  function turn() {
     if (!lastHit) return null;
     return turnEstimate(centsOff(lastHit.freq, target));
   }
 
-  function instructionText() {
-    if (phase === "prep") {
-      return "Get an even starting point: hand-tighten every lug until it's finger tight, then give each one <b>one full turn</b> with the drum key, following the numbers on the diagram.";
-    }
-    if (phase === "done") {
-      return `In tune within ±${tolerance()} Hz. Every lug got the same treatment, so the head should be even. Tune further to tighten the window${refineStep >= 2 ? "" : ` to ±${toleranceForStep(refineStep + 1)} Hz`} and fine-tune from there.`;
-    }
-    if (hitFailed) return "Didn't catch that one — strike the center of the head again, firmly.";
-    if (!lastHit) return "Strike the center of the head once, firmly, and let it ring.";
-    const turn = currentTurn();
-    if (!turn || turn.turns === 0) return "Very close — strike the center again to confirm.";
-    return `Turn every lug ${turn.label} to ${turn.direction}, following the numbers on the diagram. Then strike the center again.`;
+  function mode() {
+    if (!everListened) return "idle";
+    return inTolerance ? "in" : "off";
   }
 
-  function accuracyPct() {
-    if (!lastHit) return 0;
-    const a = Math.abs(lastHit.hz);
-    const tol = tolerance();
-    if (a <= tol) return 100;
-    return Math.max(0, Math.round(100 * (1 - (a - tol) / PROGRESS_RANGE_HZ)));
+  function instruction() {
+    if (!everListened) {
+      // The prep guidance lives here so it's the first thing you read and it
+      // disappears for good after the first measurement.
+      return "Start with every lug finger tight, then one full turn with the key on each. Then strike the centre of the head.";
+    }
+    if (micError) return "";
+    if (hitFailed) return "Didn't catch that one — strike the centre again, firmly.";
+    if (inTolerance) {
+      return isFinalRound()
+        ? "This drum is done. Move on, or strike again to double-check."
+        : "Tighten the window to keep going, or skip to the next drum.";
+    }
+    return "Strike the centre of the head once, firmly, and let it ring.";
   }
 
-  function buttonLabel() {
-    if (phase === "prep") return "Done — Start Tuning";
-    if (phase === "done") {
-      return refineStep >= 2 ? "Tune Further" : `Tune Further (±${toleranceForStep(refineStep + 1)} Hz)`;
+  function turnContent() {
+    const m = mode();
+    if (m === "idle") return { glyph: KEY_GLYPH, frac: "—", sub: "Press start, then strike the centre." };
+    if (m === "in") {
+      const tol = tolerance();
+      const note = isFinalRound() ? "this drum is done" : tol === 10 ? "the head is even" : "nicely seated";
+      return { glyph: CHECK_GLYPH, frac: "", sub: `Within ±${tol} Hz — ${note}.` };
     }
-    return listening ? "Stop Listening" : "Resume Listening";
+    const t = turn();
+    return {
+      glyph: KEY_GLYPH,
+      frac: t && t.turns > 0 ? t.label.replace(" turn", "") : "—",
+      sub: t && t.turns > 0 ? `${t.direction} · every lug` : "very close — strike again",
+    };
+  }
+
+  // ±40 Hz maps to the full width of the ladder.
+  function needlePct() {
+    if (!lastHit) return 50;
+    return Math.max(4, Math.min(96, 50 + -lastHit.hz * 1.25));
+  }
+
+  function primary() {
+    if (!everListened) return { label: "Start listening", cls: "", dot: false, run: startListening };
+    if (!inTolerance) {
+      return listening
+        ? { label: "Listening — strike again", cls: "", dot: true, run: null }
+        : { label: "Resume listening", cls: "", dot: false, run: startListening };
+    }
+    if (!isFinalRound()) {
+      const next = TOLERANCES[roundIndex + 1];
+      return { label: `Tune further · ±${next} Hz`, cls: "white", dot: false, run: tighten };
+    }
+    return {
+      label: hasNextPiece(params) ? "Next drum" : "Finish",
+      cls: "green",
+      dot: false,
+      run: () => {
+        stopListening();
+        goToNextPiece(params);
+      },
+    };
   }
 
   function render() {
-    const pct = accuracyPct();
-    const tol = tolerance();
-    const badge = tuneBadge(lastHit ? lastHit.hz : null, tol);
-    const displayFreq = lastHit ? lastHit.freq : currentFreqFor(target, null);
-    const turn = currentTurn();
-    const showTurn = phase === "tuning" && turn && turn.turns > 0;
+    const m = mode();
+    const tone = m === "off" ? "var(--yellow)" : m === "in" ? "var(--green)" : "var(--text-ghost)";
+    const heard = lastHit ? lastHit.freq.toFixed(1) : target.toFixed(1);
+    const delta = lastHit ? (lastHit.hz > 0 ? `−${lastHit.hz.toFixed(1)}` : `+${Math.abs(lastHit.hz).toFixed(1)}`) : "";
+    const tc = turnContent();
+    const p = primary();
+    const bandW = tolerance() === 10 ? 25 : tolerance() === 5 ? 12.5 : 6.25;
+    // Skip appears once round 1 passes; on the final round the whole
+    // secondary collapses so the primary slides out to full width.
+    const showSkip = everListened && roundIndex > 0;
+    const collapsed = inTolerance && isFinalRound();
 
     container.innerHTML = `
-      <div class="accuracy-ring-wrap card">
-        ${accuracyRingSvg(pct)}
-        <div>
-          <div class="accuracy-text">${lastHit ? `${pct}% to target` : "Not measured yet"}</div>
-          <div class="accuracy-sub">${
-            lastHit
-              ? `${Math.abs(lastHit.hz).toFixed(1)} Hz ${lastHit.hz > 0 ? "below" : "above"} target${round ? ` · round ${round}` : ""}`
-              : "Strike the center to measure"
-          }</div>
+      <div class="heard">
+        <div class="eyebrow">Heard</div>
+        <div class="heard-row">
+          <span class="heard-val" style="color:${tone};opacity:${m === "idle" ? 0.5 : 1}">${heard}</span>
+          <span class="heard-unit">Hz</span>
+        </div>
+        <div class="heard-strip">
+          <span class="heard-target">TARGET ${target.toFixed(1)}</span>
+          <span class="heard-pip"></span>
+          <span class="heard-delta" style="color:${tone}">${delta}</span>
         </div>
       </div>
 
-      <div class="lug-map-wrap">
-        ${buildLugMapSvg(lugCount, { inTune: phase === "done" })}
-        <div class="pitch-readout">
-          <div class="current-freq">${displayFreq.toFixed(1)} Hz</div>
-          <div class="target-freq">Target: ${target.toFixed(1)} Hz ±${tol}${styleName ? ` · ${styleName}` : ""}</div>
-          <div class="cents-badge ${badge.cls}">${badge.text}</div>
+      <div class="ladder">
+        <div class="ladder-band" style="left:${(50 - bandW / 2)}%;width:${bandW}%"></div>
+        <div class="ladder-fine"></div>
+        <div class="ladder-coarse"></div>
+        <div class="ladder-centre"></div>
+        <div class="needle" style="left:${needlePct()}%;background:${tone};box-shadow:0 0 15px ${tone};opacity:${m === "idle" ? 0.35 : 1}">
+          <div class="needle-cap" style="background:${tone}"></div>
         </div>
-        <div class="lug-legend-note">Numbers = the order to turn the lugs. Turn them all by the same amount.</div>
+        <div class="ladder-scale"><span>−40</span><span>−20</span><span class="zero">0</span><span>+20</span><span>+40</span></div>
       </div>
 
-      ${showTurn ? drumKeyAnimHtml(turn) : ""}
-
-      <div class="tune-step card">
-        <div class="tune-step-title">${
-          phase === "prep" ? "Before you start" : phase === "done" ? "Finished" : `Round ${round + 1}`
-        }</div>
-        <div class="tune-step-text">${instructionText()}</div>
+      <div class="turn-block ${m}">
+        <span class="turn-glyph-wrap" style="color:${
+          m === "off" ? "var(--yellow-ink)" : m === "in" ? "var(--green)" : "var(--text-ghost)"
+        };display:flex">${tc.glyph}</span>
+        <div class="turn-text">
+          ${tc.frac ? `<div class="turn-frac">${tc.frac}</div>` : ""}
+          <div class="turn-sub"${tc.frac ? "" : ' style="font-size:15px"'}>${escapeHtml(tc.sub)}</div>
+        </div>
       </div>
 
-      ${micError ? `<div class="mic-error">${micError}</div>` : ""}
+      ${
+        hideDiagram
+          ? ""
+          : `<div class="tune-pair">
+              <div class="diagram-card">${lugMapSvg(lugCount)}</div>
+              <div class="order-card">
+                <div class="eyebrow">Turn order</div>
+                <div class="order-line">Follow the numbers on the diagram — they jump across.</div>
+                <div class="order-line second">Turn every lug by the same amount.</div>
+              </div>
+            </div>`
+      }
 
-      <div class="btn-row" style="margin-bottom:10px;">
-        <button class="btn btn-primary${listening ? " listening-pulse" : ""}" id="tap-lug-btn">${buttonLabel()}</button>
+      ${micError ? `<div class="mic-error">${escapeHtml(micError)}</div>` : ""}
+      <div class="tune-instruction">${escapeHtml(instruction())}</div>
+      <div class="tune-spacer"></div>
+
+      <div class="btn-row">
+        <button class="pill ${p.cls}" id="primary-btn"${p.run ? "" : " disabled"}>
+          ${p.dot ? '<span class="live-dot"></span>' : ""}${escapeHtml(p.label)}
+        </button>
+        <div class="sec-wrap${collapsed ? " collapsed" : ""}">
+          <button class="sec-btn" id="secondary-btn" aria-label="${showSkip ? "Skip to next drum" : "Preview target tone"}">
+            ${showSkip ? `<span class="skip-label">Skip</span>${SKIP_ICON}` : PLAY_ICON}
+          </button>
+        </div>
       </div>
     `;
-    qs(container, "#tap-lug-btn").addEventListener("click", onMainButton);
+
+    const btn = qs(container, "#primary-btn");
+    if (p.run) btn.addEventListener("click", p.run);
+    qs(container, "#secondary-btn").addEventListener("click", () => {
+      if (showSkip) {
+        stopListening();
+        goToNextPiece(params);
+      } else {
+        playToneForDrumType(drumType || "rack-tom", target);
+      }
+    });
+
+    if (onStateChange) onStateChange(state());
   }
 
   function handleHit(result) {
-    if (phase !== "tuning") return;
     if (!result) {
       hitFailed = true;
       render();
@@ -319,13 +310,8 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
     hitFailed = false;
     const hz = hzOff(result.frequency, target);
     lastHit = { freq: result.frequency, hz };
-    round++;
-    if (Math.abs(hz) <= tolerance()) {
-      phase = "done";
-      stopListening();
-    }
+    inTolerance = Math.abs(hz) <= tolerance();
     render();
-    speak(instructionText());
   }
 
   async function startListening() {
@@ -333,35 +319,20 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
     try {
       await listener.start({ targetFreq: target, fftSize, onHit: handleHit });
       listening = true;
+      everListened = true;
       registerCleanup(stopListening);
     } catch (err) {
       micError = micErrorMessage(err);
+      everListened = true; // show the error in place of the prep line
     }
+    render();
   }
 
-  async function onMainButton() {
-    // From prep or done, the button starts a listening pass. Either way the
-    // prep card is behind us for good — it never reappears once tuning has
-    // begun, since re-reading "hand-tighten everything" mid-tune is wrong.
-    if (phase === "prep" || phase === "done") {
-      if (phase === "done") {
-        refineStep++; // Tune Further: halve the window (capped in tuningMath)
-        lastHit = null;
-        round = 0;
-      }
-      phase = "tuning";
-      hitFailed = false;
-      await startListening();
-      render();
-      speak(instructionText());
-      return;
-    }
-    if (listening) {
-      stopListening();
-      render();
-      return;
-    }
-    await startListening();
+  // Halving keeps the mic open and re-enters the out-of-tolerance state for
+  // the new round.
+  function tighten() {
+    roundIndex = Math.min(roundIndex + 1, TOLERANCES.length - 1);
+    inTolerance = lastHit ? Math.abs(lastHit.hz) <= tolerance() : false;
     render();
   }
 
@@ -372,13 +343,5 @@ export function mountLiveTuning(container, { lugCount, target, fftSize, styleNam
   }
 
   render();
-  return {
-    stop: stopListening,
-    setVoice(on) {
-      voiceOn = on;
-    },
-    speakCurrent() {
-      speak(instructionText());
-    },
-  };
+  return { stop: stopListening, getState: state };
 }
