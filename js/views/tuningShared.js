@@ -168,17 +168,20 @@ export function mountTuningEngine(container, opts) {
 
   function turnContent() {
     const m = mode();
-    if (m === "idle") return { glyph: KEY_GLYPH, frac: "—", sub: "Press start, then strike the centre." };
+    if (m === "idle") return { glyph: KEY_GLYPH, frac: "—", sub: "Press start, then strike the centre.", angle: null };
     if (m === "in") {
       const tol = tolerance();
       const note = isFinalRound() ? "this drum is done" : tol === 10 ? "the head is even" : "nicely seated";
-      return { glyph: CHECK_GLYPH, frac: "", sub: `Within ±${tol} Hz — ${note}.` };
+      return { glyph: CHECK_GLYPH, frac: "", sub: `Within ±${tol} Hz — ${note}.`, angle: null };
     }
     const t = turn();
     return {
       glyph: KEY_GLYPH,
       frac: t && t.turns > 0 ? t.label.replace(" turn", "") : "—",
       sub: t && t.turns > 0 ? `${t.direction} · every lug` : "very close — strike again",
+      // The key sweeps through the exact fraction being asked for, and
+      // anticlockwise to loosen — copying the animation beats reading "7/16".
+      angle: t && t.turns > 0 ? t.turns * 360 * (t.direction === "loosen" ? -1 : 1) : null,
     };
   }
 
@@ -218,9 +221,10 @@ export function mountTuningEngine(container, opts) {
     const tc = turnContent();
     const p = primary();
     const bandW = tolerance() === 10 ? 25 : tolerance() === 5 ? 12.5 : 6.25;
-    // Skip appears once round 1 passes; on the final round the whole
-    // secondary collapses so the primary slides out to full width.
-    const showSkip = everListened && roundIndex > 0;
+    // Skip only replaces the preview tone once you're actually in tolerance and
+    // there's a tighter round to decline. While you're still hunting the pitch
+    // — in any round — the preview tone is the more useful button.
+    const showSkip = inTolerance && !isFinalRound();
     const collapsed = inTolerance && isFinalRound();
 
     container.innerHTML = `
@@ -251,7 +255,7 @@ export function mountTuningEngine(container, opts) {
       <div class="turn-block ${m}">
         <span class="turn-glyph-wrap" style="color:${
           m === "off" ? "var(--yellow-ink)" : m === "in" ? "var(--green)" : "var(--text-ghost)"
-        };display:flex">${tc.glyph}</span>
+        };display:flex${tc.angle === null ? "" : `;--key-turn:${tc.angle.toFixed(1)}deg`}">${tc.glyph}</span>
         <div class="turn-text">
           ${tc.frac ? `<div class="turn-frac">${tc.frac}</div>` : ""}
           <div class="turn-sub"${tc.frac ? "" : ' style="font-size:15px"'}>${escapeHtml(tc.sub)}</div>

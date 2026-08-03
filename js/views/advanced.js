@@ -35,7 +35,19 @@ export function renderAdvanced() {
     <div class="meta" id="idle-note" style="flex:none;margin-top:10px;text-align:center">Nothing coming in yet.</div>
     <div id="mic-slot" style="flex:none"></div>
 
-    <div class="eyebrow" style="flex:none;margin-top:24px">Overtone series</div>
+    <div style="flex:none;margin-top:24px;display:flex;align-items:center">
+      <span class="eyebrow">Overtone series</span>
+      <button class="help-btn" id="help-btn" aria-label="What is the overtone series?">?</button>
+    </div>
+    <div class="help-box" id="help-box" hidden>
+      Every drum note is a stack of frequencies, not just one. The <b>fundamental</b>
+      is the lowest and is the pitch you actually tune — it should land near your
+      target Hz. The rows below it are <b>overtones</b>: higher ways the head vibrates
+      at the same time (on drums they aren't neat multiples of the fundamental like on
+      a guitar string). How to use this: strike the drum and compare the fundamental
+      against your target. If an overtone shows much louder than the fundamental, the
+      head is likely uneven — go around the lugs and even them out.
+    </div>
     <div class="rows" id="overtones" style="flex:none;margin-top:3px"></div>
 
     <div class="spacer"></div>
@@ -132,6 +144,10 @@ export function renderAdvanced() {
   }
 
   qs(view, "#listen-btn").addEventListener("click", toggle);
+  qs(view, "#help-btn").addEventListener("click", () => {
+    const box = qs(view, "#help-box");
+    box.hidden = !box.hidden;
+  });
   paintRows();
   paintBadge();
   return view;

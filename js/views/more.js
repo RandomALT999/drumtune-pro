@@ -9,6 +9,15 @@ const STEPS = [
   "Strike again. Repeat until the window closes to ±2.5 Hz.",
 ];
 
+// Mic-placement guidance. The tuning screen has no room for it and it's
+// read once, not every round, so it lives here.
+const TIPS = [
+  "Hold the phone 6–12 inches above the middle of the head.",
+  "Strike the centre, not near a lug — a rim hit rings at a second, higher pitch that can confuse any tuner.",
+  "Tune somewhere quiet, and mute the drum's other head (rest it on carpet or your leg) so only the head you're tuning rings.",
+  "As you close in, make smaller moves — an eighth turn or less.",
+];
+
 // The More tab. Absorbs the old About screen, which is why the Maine App
 // Challenge disclosure lives here — it's required to be in-app.
 export function renderMore() {
@@ -20,6 +29,11 @@ export function renderMore() {
     <div class="eyebrow" style="flex:none;margin-top:24px">How to use it</div>
     <div style="flex:none;margin-top:4px;display:flex;flex-direction:column">
       ${STEPS.map((s, i) => `<div class="numbered-row"><span class="n">${i + 1}</span><span class="t">${s}</span></div>`).join("")}
+    </div>
+
+    <div class="eyebrow" style="flex:none;margin-top:24px">Getting clean readings</div>
+    <div style="flex:none;margin-top:4px;display:flex;flex-direction:column">
+      ${TIPS.map((t) => `<div class="numbered-row"><span class="n">·</span><span class="t">${t}</span></div>`).join("")}
     </div>
 
     <div style="flex:none;margin-top:22px;display:flex;flex-direction:column">

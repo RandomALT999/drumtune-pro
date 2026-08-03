@@ -609,6 +609,35 @@ button, input { font-family: inherit; }
 .seg button.on { border: 1.5px solid var(--accent); background: rgba(255, 122, 69, 0.13); color: var(--accent); }
 .seg.lugs button.on { border: 1.5px solid var(--text); background: transparent; color: var(--text); }
 
+/* Style vs. Custom Hz toggle inside the Sound row */
+.seg-toggle { display: flex; gap: 6px; flex: none; }
+.seg-toggle button {
+  height: 42px;
+  padding: 0 13px;
+  border-radius: var(--r-ctl);
+  border: 1px solid var(--surface-2);
+  background: transparent;
+  color: var(--text-dim);
+  font: 500 12.5px "Space Grotesk", sans-serif;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.seg-toggle button.on { border: 1.5px solid var(--accent); background: rgba(255, 122, 69, 0.13); color: var(--accent); }
+
+/* Expandable rows — kit-builder pieces and the setup Drum row. The chevron
+   rotates to point down when the editor below is open. */
+.piece-chev { transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.piece-chev.open { transform: rotate(90deg); }
+.piece-editor {
+  padding: 2px 0 16px;
+  animation: dtIn 0.2s ease both;
+}
+.piece-head { cursor: pointer; }
+.piece.dragging { opacity: 0.6; }
+.piece.dragging .piece-head { background: var(--surface); border-radius: var(--r-ctl); }
+.drag-handle { cursor: grab; touch-action: none; padding: 6px 4px; margin: -6px -4px; }
+.drag-handle:active { cursor: grabbing; }
+
 .target-foot { flex: none; display: flex; align-items: flex-end; justify-content: space-between; padding-bottom: 14px; gap: 14px; }
 .target-val { display: flex; align-items: baseline; gap: 5px; margin-top: 3px; }
 .target-num {
@@ -694,7 +723,9 @@ button, input { font-family: inherit; }
 
 /* ── Motion ────────────────────────────────────────────────────────── */
 @keyframes dtStrike { 0% { transform: scale(.84); opacity: .85 } 75%, 100% { transform: scale(1.18); opacity: 0 } }
-@keyframes dtKey { 0% { transform: rotate(0) } 45%, 88% { transform: rotate(67.5deg) } 100% { transform: rotate(0) } }
+/* --key-turn is set per-render to the exact fraction being asked for (negative
+   to loosen), so the key sweeps the angle the drummer should copy. */
+@keyframes dtKey { 0% { transform: rotate(0) } 45%, 88% { transform: rotate(var(--key-turn, 67.5deg)) } 100% { transform: rotate(0) } }
 @keyframes dtBlink { 0%, 100% { opacity: 1 } 50% { opacity: .2 } }
 @keyframes dtRise { from { transform: scaleY(.3) } to { transform: scaleY(1) } }
 @keyframes dtIn { from { opacity: 0; transform: translateY(7px) } to { opacity: 1; transform: none } }
@@ -707,5 +738,5 @@ button, input { font-family: inherit; }
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  .turn-glyph.key { transform: rotate(67.5deg); }
+  .turn-glyph.key { transform: rotate(var(--key-turn, 67.5deg)); }
 }
